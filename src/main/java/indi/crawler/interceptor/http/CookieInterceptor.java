@@ -13,7 +13,7 @@ public class CookieInterceptor extends HttpInterceptor {
 
     // attach cookie
     @Override
-    public void beforeAll(InterceptorContext hCtx) {
+    public void executeRequest(InterceptorContext hCtx) {
         CrawlerContext ctx = hCtx.getCrawlerContext();
         Task task = ctx.getTask();
         URI uri = ctx.getUri();
@@ -25,7 +25,7 @@ public class CookieInterceptor extends HttpInterceptor {
                 request.addHeader("Cookie", cookies);
         }
         
-        super.beforeAll(hCtx);
+        super.executeRequest(hCtx);
     }
     
     @Override

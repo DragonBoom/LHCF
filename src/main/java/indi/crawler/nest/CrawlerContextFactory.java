@@ -74,8 +74,10 @@ public class CrawlerContextFactory {
                 throw new WrapperException(e);
             }
         }
-        if (request instanceof HttpEntityEnclosingRequestBase && requestEntity != null)
+        // 若请求可携带请求实体（方法是POST/PUT），则设置请求实体
+        if (request instanceof HttpEntityEnclosingRequestBase && requestEntity != null) {
             ((HttpEntityEnclosingRequestBase) request).setEntity(requestEntity);
+        }
         request.setURI(uri);
         request.setHeaders(task.getRequestHeaders());
         // begin build header

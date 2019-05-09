@@ -68,7 +68,7 @@ public class BasicExceptionHandler implements CrawlerExceptionHandler {
         ctx.addThrowables(throwable);
 
         BiFunction<CrawlerContext, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
-            log.error("该异常无法处理，即将终止爬虫 {}", e);
+            log.error("该异常无法处理，即将终止爬虫 {}", e.getMessage());
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
             e.printStackTrace();
             ctx0.setStatus(CrawlerStatus.INTERRUPTED);

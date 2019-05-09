@@ -178,28 +178,30 @@ public class ContextPool implements Message {
     }
 
     /**
-     * 返回当前等待队列中元素的安全的数组，注意内存开销！！
+     * 返回当前等待队列数组，对该数组的操作是安全的，但需要注意内存开销！！
      * 
      * @return
      */
     public Object[] getLeased() {
         Object[] result = null;
-        leasedsLock.lock();
+        Lock lock = leasedsLock;// avoid get field
+        lock.lock();
         try {
             result = leaseds.toArray();
         } finally {
-            leasedsLock.unlock();
+            lock.unlock();
         }
         return result;
     }
 
     public int getLeasedSize() {
-        leasedsLock.lock();
+        Lock lock = leasedsLock;// avoid get field
+        lock.lock();
         int size = 0;
         try {
             size = leaseds.size();
         } finally {
-            leasedsLock.unlock();
+            lock.unlock();
         }
         return size;
     }

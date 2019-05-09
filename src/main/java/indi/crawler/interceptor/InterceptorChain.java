@@ -7,7 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import indi.crawler.exception.BasicExceptionHandler;
 import indi.crawler.exception.CrawlerExceptionHandler;
-import indi.crawler.interceptor.http.BasicCrawlerInterceptor;
+import indi.crawler.interceptor.http.BasicHttpInterceptor;
 import indi.crawler.interceptor.http.FinalHttpInterceptor;
 import indi.crawler.interceptor.http.LogSpeedInterceptor;
 import indi.crawler.nest.CrawlerContext;
@@ -26,17 +26,17 @@ import lombok.Setter;
 public class InterceptorChain {
     @Getter
     @Setter
-    private LinkedList<CrawlerInterceptor> defaultInterceptors;
+    private LinkedList<Interceptor> defaultInterceptors;
     private CrawlerExceptionHandler exceptionHandler;
     
-    private ConcurrentHashMap<TaskType, CrawlerInterceptor> finalInterceptorMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<TaskType, Interceptor> finalInterceptorMap = new ConcurrentHashMap<>();
     
     private void init() {
         defaultInterceptors = new LinkedList<>();
         /*
          * 越后面的拦截器越晚执行
          */
-        defaultInterceptors.add(new BasicCrawlerInterceptor());// TODO
+        defaultInterceptors.add(new BasicHttpInterceptor());// TODO
         defaultInterceptors.add(new LogSpeedInterceptor());// TODO sure ?
         
         exceptionHandler = new BasicExceptionHandler();// TODO
@@ -50,7 +50,7 @@ public class InterceptorChain {
     
     public void process(CrawlerContext ctx) {
         Task task = ctx.getTask();
-        List<CrawlerInterceptor> interceptors = task.getCrawlerInterceptors();
+        List<Interceptor> interceptors = task.getCrawlerInterceptors();
         if (interceptors == null) {
             interceptors = initInterceptors(task);
         }
@@ -65,31 +65,34 @@ public class InterceptorChain {
     /**
      * 初始化Task的拦截器并返回
      */
-    private synchronized List<CrawlerInterceptor> initInterceptors(Task task) {
-        List<CrawlerInterceptor> interceptors = task.getCrawlerInterceptors();
+    private synchronized List<Interceptor> initInterceptors(Task task) {
+        List<Interceptor> interceptors = task.getCrawlerInterceptors();
 
         if (interceptors != null) {
             throw new IllegalArgumentException("当前爬虫已有拦截器");
         }
-        List<CrawlerInterceptor> customInterceptors = task.getCustomInterceptors();
+        List<Interceptor> customInterceptors = task.getCustomInterceptors();
         interceptors = new ArrayList<>(customInterceptors.size() + defaultInterceptors.size() + 1);// 1 for final interceptor
         
         interceptors.addAll(defaultInterceptors);
         interceptors.addAll(customInterceptors);
         
-        CrawlerInterceptor finalInterceptor = finalInterceptorMap.get(task.getType());
+        // get and add final interceptor
+        Interceptor finalInterceptor = finalInterceptorMap.get(task.getType());
         
         if (finalInterceptor == null) {
             throw new IllegalArgumentException("暂不支持该格式： " + task.getType());
         }
         
         interceptors.add(finalInterceptor);
+        
+        // 构建拦截链
         Object[] array = interceptors.toArray();
         if (array.length > 1) {
             // set next for all
             for (int i = 1; i < array.length; i++) {
-                CrawlerInterceptor prev = (CrawlerInterceptor) array[i - 1];
-                CrawlerInterceptor now = (CrawlerInterceptor) array[i];
+                Interceptor prev = (Interceptor) array[i - 1];
+                Interceptor now = (Interceptor) array[i];
                 prev.setNext(now);
             }
         }

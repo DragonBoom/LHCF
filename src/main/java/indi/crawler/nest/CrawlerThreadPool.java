@@ -62,7 +62,7 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
                 addNewThread("Crawler Thread - " + i);
             }
         }
-        if (size > 0) {
+        if (j > 0) {
             log.info("已填充爬虫池  [{}/{}]", j, size);
         }
 //        Thread[] threads = new Thread[super.activeCount()];

@@ -16,7 +16,7 @@ public class FinalHttpInterceptor extends HttpInterceptor {
     private HTTPProcessor processor;
 
     @Override
-    public void beforeAll(InterceptorContext iCtx) {
+    public void executeRequest(InterceptorContext iCtx) {
         CrawlerContext ctx = iCtx.getCrawlerContext();
         try {
             processor.executeRequest(iCtx.getCrawlerContext());
@@ -26,7 +26,7 @@ public class FinalHttpInterceptor extends HttpInterceptor {
     }
 
     @Override
-    public void afterExecuteRequest(InterceptorContext iCtx) {
+    public void receiveResponse(InterceptorContext iCtx) {
         CrawlerContext ctx = iCtx.getCrawlerContext();
         try {
             processor.receiveResponse(iCtx.getCrawlerContext());

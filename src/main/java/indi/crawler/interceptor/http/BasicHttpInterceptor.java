@@ -12,18 +12,18 @@ import indi.crawler.nest.CrawlerThread;
  * @author DragonBoom
  *
  */
-public class BasicCrawlerInterceptor extends HttpInterceptor {
+public class BasicHttpInterceptor extends HttpInterceptor {
     
-    @Override
-    public HandlerResult process(InterceptorContext iCtx) {
-        beforeAll(iCtx);
-        afterExecuteRequest(iCtx);
-        afterReceiveResponse(iCtx);
-        afterHandleResult(iCtx);
-        
-        HandlerResult result = new HandlerResult();
-        return result;
-    }
+//    @Override
+//    public HandlerResult process(InterceptorContext iCtx) {
+//        executeRequest(iCtx);
+//        receiveResponse(iCtx);
+//        afterReceiveResponse(iCtx);
+//        afterHandleResult(iCtx);
+//        
+//        HandlerResult result = new HandlerResult();
+//        return result;
+//    }
 
     @Override
     public void beforeAll(InterceptorContext hCtx) {
@@ -35,7 +35,7 @@ public class BasicCrawlerInterceptor extends HttpInterceptor {
         ctx.setRegistration(System.currentTimeMillis());
         ctx.setThread((CrawlerThread) Thread.currentThread());
 
-        super.beforeAll(hCtx);
+        super.executeRequest(hCtx);
     }
 
     @Override

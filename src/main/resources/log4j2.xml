@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--status : 这个用于设置log4j2自身内部的信息输出，可以不设置. 日志级别从低到高分为TRACE < DEBUG < INFO 
+	< WARN < ERROR < FATAL， 例如，当设置成TRACE时，会看到log4j2内部各种详细输出；当设置为WARN，则log4j2内部低于WARN的信息都不会输出 -->
+<!-- monitorInterval : Log4j能够自动检测修改配置文件和重新配置本身, 设置间隔秒数。 -->
+<Configuration status="INFO">
+
+	<Properties>
+		<!-- 配置日志文件输出目录，请在application.properties中配置logging.fileDir参数 -->
+		<Property name="LOG_HOME">target/logs_temp</Property>
+	</Properties>
+
+	<Appenders>
+		<!-- 优先级从高到低分别是 OFF、FATAL、ERROR、WARN、INFO、DEBUG、ALL -->
+		<!-- 单词解释： Match：匹配 DENY：拒绝 Mismatch：不匹配 ACCEPT：接受 -->
+		<!-- DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+		<!--输出日志的格式 %d{yyyy-MM-dd HH:mm:ss, SSS} : 日志生产时间 %p : 日志输出格式 %c : logger的名称 
+			%m : 日志内容，即 logger.info("message") %n : 换行符 %C : Java类名 %L : 日志输出所在行数 %M 
+			: 日志输出所在方法名 hostName : 本地机器名 hostAddress : 本地ip地址， 其他参数可以见文章 https://blog.csdn.net/guoquanyou/article/details/5689652 -->
+
+		<!--这个输出控制台的配置，这里输出除了warn和error级别的信息到System.out -->
+		<Console name="console_out_appender" target="SYSTEM_OUT">
+			<!-- 控制台只输出level及以上级别的信息(onMatch),其他的直接拒绝(onMismatch) . -->
+			<ThresholdFilter level="DEBUG" onMatch="ACCEPT"
+				onMismatch="DENY" />
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+		</Console>
+
+		<!-- 这个输出控制台的配置，这里输出error级别的信息到System.err，在eclipse控制台上看到的是红色文字 -->
+		<Console name="console_err_appender" target="SYSTEM_ERR">
+			<ThresholdFilter level="ERROR" onMatch="ACCEPT"
+				onMismatch="DENY" />
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+		</Console>
+
+		<!-- 关于RollingFile节点属性说明： -->
+		<!-- fileName 指定当前日志文件的位置和文件名称 -->
+		<!-- filePattern 指定当发生Rolling时，文件的转移和重命名规则（当后缀为.gz会对日志文件进行压缩） -->
+		<!-- immediateFlush 默认为true，每次写入都会执行flush。这可以保证每次数据都被写入磁盘，但是会影响性能。在同步的loggers中每次写入执行flush，那就非常有用。异步loggers和appenders将会在一系列事件结束后自动执行flush，即使设置为false。这也保证了数据写入到磁盘而且很高效 -->
+
+		<!-- PatternLayout节点， 输出格式参数，参照文章https://blog.csdn.net/guoquanyou/article/details/5689652 -->
+		<!-- Policies节点，指定什么之后执行rollover。常用的有这么三个策略：OnStartupTriggeringPolicy 程序启动时候执行一次rollover； 
+			SizeBasedTriggeringPolicy 日志文件到达指定大小是执行rollover，单位可以使KB、MB、GB；TimeBasedTriggeringPolicy 
+			当日期不匹配的时候执行rollover。Policies节点具体用法可参照文章https://blog.csdn.net/zhang168/article/details/46814489 -->
+		<!-- Filters节点，过滤器决定事件是否应该由这个Appender来处理 -->
+
+
+		<!-- TRACE级别日志 ; 设置日志格式并配置日志压缩格式，压缩文件独立放在一个文件夹内， 日期格式不能为冒号，否则无法生成，因为文件名不允许有冒号，此appender只输出trace级别的数据到trace.log -->
+		<RollingFile name="trace_appender" immediateFlush="true"
+			fileName="${LOG_HOME}/trace.log"
+			filePattern="${LOG_HOME}/%d{yyyy-MM}/trace/trace - %d{yyyy-MM-dd HH_mm_ss}.log">
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+			<Policies>
+				<!-- 每个日志文件最大大小，单位可以是KB、MB、GB -->
+				<SizeBasedTriggeringPolicy size="10MB" />
+				<!-- 按时间间隔生成新文件，其中间隔interval的单位需要参照filePattern里时间的最小单位， 即如果filePattern配置的日期格式为 
+					%d{yyyy-MM-dd HH} ，则单位为小时， 如果filePattern配置的日期格式为 %d{yyyy-MM-dd} ，则单位为天 -->
+				<TimeBasedTriggeringPolicy interval="86400"
+					modulate="true" />
+			</Policies>
+
+			<Filters>
+				<!-- 此Filter意思是，只输出trace级别的数据。 DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； 
+					ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+				<ThresholdFilter level="debug" onMatch="DENY"
+					onMismatch="NEUTRAL" />
+				<ThresholdFilter level="trace" onMatch="ACCEPT"
+					onMismatch="DENY" />
+			</Filters>
+		</RollingFile>
+
+		<!-- DEBUG级别日志 设置日志格式并配置日志压缩格式，压缩文件独立放在一个文件夹内， 日期格式不能为冒号，否则无法生成，因为文件名不允许有冒号，此appender只输出debug级别的数据到debug.log; -->
+		<RollingFile name="debug_appender" immediateFlush="true"
+			fileName="${LOG_HOME}/debug.log"
+			filePattern="${LOG_HOME}/%d{yyyy-MM}/debug/debug - %d{yyyy-MM-dd HH_mm_ss}.log">
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+			<Policies>
+				<!-- 每个日志文件最大大小，单位可以是KB、MB、GB -->
+				<SizeBasedTriggeringPolicy size="10MB" />
+				<!-- 按时间间隔生成新文件，其中间隔interval的单位需要参照filePattern里时间的最小单位， 即如果filePattern配置的日期格式为 
+					%d{yyyy-MM-dd HH} ，则单位为小时， 如果filePattern配置的日期格式为 %d{yyyy-MM-dd} ，则单位为天 -->
+				<TimeBasedTriggeringPolicy interval="86400"
+					modulate="true" />
+			</Policies>
+
+			<Filters>
+				<!-- 此Filter意思是，只输出debug级别的数据。 DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； 
+					ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+				<ThresholdFilter level="info" onMatch="DENY"
+					onMismatch="NEUTRAL" />
+				<ThresholdFilter level="debug" onMatch="ACCEPT"
+					onMismatch="DENY" />
+			</Filters>
+		</RollingFile>
+
+		<!-- INFO级别日志 设置日志格式并配置日志压缩格式，压缩文件独立放在一个文件夹内， 日期格式不能为冒号，否则无法生成，因为文件名不允许有冒号，此appender只输出info级别的数据info.log; -->
+		<RollingFile name="info_appender" immediateFlush="true"
+			fileName="${LOG_HOME}/info.log"
+			filePattern="${LOG_HOME}/%d{yyyy-MM}/info/info - %d{yyyy-MM-dd HH_mm_ss}.log">
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+			<Policies>
+				<!-- 每个日志文件最大大小，单位可以是KB、MB、GB -->
+				<SizeBasedTriggeringPolicy size="10MB" />
+				<!-- 按时间间隔生成新文件，其中间隔interval的单位需要参照filePattern里时间的最小单位， 即如果filePattern配置的日期格式为 
+					%d{yyyy-MM-dd HH} ，则单位为小时， 如果filePattern配置的日期格式为 %d{yyyy-MM-dd} ，则单位为天 -->
+				<TimeBasedTriggeringPolicy interval="86400"
+					modulate="true" />
+			</Policies>
+			<Filters>
+				<!-- 此Filter意思是，只输出info级别的数据。 DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； 
+					ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+				<ThresholdFilter level="warn" onMatch="DENY"
+					onMismatch="NEUTRAL" />
+				<ThresholdFilter level="info" onMatch="ACCEPT"
+					onMismatch="DENY" />
+			</Filters>
+		</RollingFile>
+
+		<!-- WARN级别日志 -->
+		<RollingFile name="warn_appender" immediateFlush="true"
+			fileName="${LOG_HOME}/warn.log"
+			filePattern="${LOG_HOME}/%d{yyyy-MM}/warn/warn - %d{yyyy-MM-dd HH_mm_ss}.log">
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+			<Policies>
+				<!-- 每个日志文件最大大小，单位可以是KB、MB、GB -->
+				<SizeBasedTriggeringPolicy size="10MB" />
+				<!-- 按时间间隔生成新文件，其中间隔interval的单位需要参照filePattern里时间的最小单位， 即如果filePattern配置的日期格式为 
+					%d{yyyy-MM-dd HH} ，则单位为小时， 如果filePattern配置的日期格式为 %d{yyyy-MM-dd} ，则单位为天 -->
+				<TimeBasedTriggeringPolicy interval="86400"
+					modulate="true" />
+			</Policies>
+
+			<Filters>
+				<!-- 此Filter意思是，只输出debug级别的数据。 DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； 
+					ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+				<ThresholdFilter level="error" onMatch="DENY"
+					onMismatch="NEUTRAL" />
+				<ThresholdFilter level="warn" onMatch="ACCEPT"
+					onMismatch="DENY" />
+			</Filters>
+		</RollingFile>
+
+		<!-- ERROR级别日志 -->
+		<RollingFile name="error_appender" immediateFlush="true"
+			fileName="${LOG_HOME}/error.log"
+			filePattern="${LOG_HOME}/%d{yyyy-MM-dd}/error/error - %d{yyyy-MM-dd HH_mm_ss}.log">
+			<!-- 输出日志的格式 -->
+			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />
+			<Policies>
+				<!-- 每个日志文件最大大小，单位可以是KB、MB、GB -->
+				<SizeBasedTriggeringPolicy size="10MB" />
+				<!-- 按时间间隔生成新文件，其中间隔interval的单位需要参照filePattern里时间的最小单位， 即如果filePattern配置的日期格式为 
+					%d{yyyy-MM-dd HH} ，则单位为小时， 如果filePattern配置的日期格式为 %d{yyyy-MM-dd} ，则单位为天 -->
+				<TimeBasedTriggeringPolicy interval="86400"
+					modulate="true" />
+			</Policies>
+			<Filters>
+				<!-- 此Filter意思是，只输出error级别的数据。 DENY，日志将立即被抛弃不再经过其他过滤器； NEUTRAL，有序列表里的下个过滤器过接着处理日志； 
+					ACCEPT，日志会被立即处理，不再经过剩余过滤器。 -->
+				<ThresholdFilter level="error" onMatch="ACCEPT"
+					onMismatch="DENY" />
+			</Filters>
+		</RollingFile>
+	</Appenders>
+
+	<Loggers>
+		<!-- 配置日志的根节点 -->
+		<!-- 定义logger，只有定义了logger并引入了appender，appender才会生效 -->
+		<root level="trace">
+			<appender-ref ref="console_out_appender" />
+			<appender-ref ref="console_err_appender" />
+			<appender-ref ref="trace_appender" />
+			<appender-ref ref="debug_appender" />
+			<appender-ref ref="info_appender" />
+			<appender-ref ref="warn_appender" />
+			<appender-ref ref="error_appender" />
+		</root>
+
+		<!-- 第三方日志系统 -->
+		<!-- 过滤掉spring和hibernate的一些无用DEBUG、INFO信息（level参数表示滤掉WARN级别以下的信息） -->
+		<logger name="org.springframework" level="WARN" />
+		<logger name="org.hibernate" level="WARN" />
+		<logger name="org.jboss.netty" level="WARN" />
+		<logger name="org.apache.http" level="WARN" />
+		<logger name="com.zaxxer.hikari" level="WARN" />
+		<logger name="org.quartz" level="WARN" />
+		<logger name="org.apache.shiro" level="WARN" />
+	</Loggers>
+
+</Configuration>

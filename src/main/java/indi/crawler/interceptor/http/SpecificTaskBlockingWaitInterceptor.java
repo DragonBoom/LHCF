@@ -73,8 +73,8 @@ public class SpecificTaskBlockingWaitInterceptor extends HttpInterceptor {
         }
         // 等待结束，开始正式处理任务
 
-        beforeAll(iCtx);
-        afterExecuteRequest(iCtx);
+        executeRequest(iCtx);
+        receiveResponse(iCtx);
         afterReceiveResponse(iCtx);
         afterHandleResult(iCtx);
 

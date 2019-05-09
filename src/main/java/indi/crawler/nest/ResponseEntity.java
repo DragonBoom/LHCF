@@ -1,16 +1,20 @@
 package indi.crawler.nest;
 
+import java.io.Serializable;
 import java.util.Optional;
 
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
 @Getter
 @Setter
 @ToString
-public class ResponseEntity {
-	private Object content;
+@NoArgsConstructor
+public class ResponseEntity implements Serializable {
+    private static final long serialVersionUID = 1L;
+    private Object content;
 	private TYPE type;
 
 	public enum TYPE {

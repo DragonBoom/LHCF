@@ -18,9 +18,10 @@ import indi.crawler.bootstrap.CrawlerJob;
 import indi.crawler.cookies.CookieStore;
 import indi.crawler.exception.CrawlerExceptionHandler;
 import indi.crawler.exception.LogCrawlerExceptionHandler;
-import indi.crawler.interceptor.CrawlerInterceptor;
+import indi.crawler.interceptor.Interceptor;
 import indi.crawler.interceptor.http.CookieInterceptor;
 import indi.crawler.interceptor.http.LogInterceptor;
+import indi.crawler.interceptor.http.RedisCacheInterceptor;
 import indi.crawler.interceptor.http.SpecificTaskBlockingWaitInterceptor;
 import indi.crawler.nest.ResponseEntity.TYPE;
 import indi.crawler.result.ResultHandler;
@@ -71,9 +72,9 @@ public class Task implements Comparable<Task> {
      * 历史执行任务数
      */
     private AtomicLong totalCounts = new AtomicLong();
-    private List<CrawlerInterceptor> customInterceptors;// 配置的拦截器
+    private List<Interceptor> customInterceptors;// 配置的拦截器
     @Setter
-    private List<CrawlerInterceptor> crawlerInterceptors;// 真正的拦截器
+    private List<Interceptor> crawlerInterceptors;// 真正的拦截器
     private List<CrawlerExceptionHandler> crawlerExceptionHandler;
 
     private TaskType type = TaskType.HTTP_TOPICAL;
@@ -224,6 +225,7 @@ public class Task implements Comparable<Task> {
         }
 
         private void createIfNotExist() {
+            Task task = this.task;
             task.customInterceptors = Optional.ofNullable(task.customInterceptors).orElse(new LinkedList<>());
             task.crawlerExceptionHandler = Optional.ofNullable(task.crawlerExceptionHandler).orElse(new LinkedList<>());
         }
@@ -233,7 +235,7 @@ public class Task implements Comparable<Task> {
             return this;
         }
 
-        public Builder withCrawlerInterceptor(CrawlerInterceptor handler) {
+        public Builder withCrawlerInterceptor(Interceptor handler) {
             createIfNotExist();
             task.customInterceptors.add(handler);
             return this;
@@ -246,9 +248,22 @@ public class Task implements Comparable<Task> {
             return this;
         }
 
+        /**
+         * 该方法暂时存在问题。。。
+         */
         public Builder withBlockingWait(long millis) {
             createIfNotExist();
             task.customInterceptors.add(new SpecificTaskBlockingWaitInterceptor(task, millis));
+            return this;
+        }
+        
+        /**
+         * @param redisURI "redis://password@localhost:6379/0"
+         * @return
+         */
+        public Builder withRedisCache(String redisURI) {
+            createIfNotExist();
+            task.customInterceptors.add(new RedisCacheInterceptor(task, redisURI));
             return this;
         }
 

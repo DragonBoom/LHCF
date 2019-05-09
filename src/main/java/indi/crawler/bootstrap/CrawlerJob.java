@@ -33,10 +33,14 @@ public class CrawlerJob {
     private HttpHost proxy;
     private boolean descPriority;
 
+    /**
+     * 初始化爬虫项目
+     */
     private void init() {
         cookieStore = new MemoryCookieStore();
         tasks = new ConcurrentHashMap<>();
         controller = new CrawlerController(this);
+        new CloseableMonitor(this);
     }
 
     public CrawlerJob() {
