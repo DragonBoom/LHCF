@@ -1,6 +1,8 @@
 package indi.crawler.exception;
 
+import java.util.Arrays;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLHandshakeException;
@@ -49,7 +51,7 @@ public class BasicExceptionHandler implements CrawlerExceptionHandler {
                     return HandleResult.NOT_RECOVER;
                 })
                 .put(RuntimeException.class, (ctx, e) -> {
-                    log.error("该异常无法处理，即将终止爬虫任务 {}", e);
+                    log.error("该异常无法处理，即将终止爬虫任务 {} \n {}", e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
                     e.printStackTrace();
                     return HandleResult.NOT_RECOVER;
                 })
@@ -68,7 +70,7 @@ public class BasicExceptionHandler implements CrawlerExceptionHandler {
         ctx.addThrowables(throwable);
 
         BiFunction<CrawlerContext, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
-            log.error("该异常无法处理，即将终止爬虫 {}", e.getMessage());
+            log.error("该异常无法处理，即将终止爬虫任务 {} \n {}", e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
             e.printStackTrace();
             ctx0.setStatus(CrawlerStatus.INTERRUPTED);

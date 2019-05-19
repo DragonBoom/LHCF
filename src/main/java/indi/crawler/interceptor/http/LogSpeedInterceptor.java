@@ -14,13 +14,17 @@ public class LogSpeedInterceptor extends HttpInterceptor {
         Optional.of(ctx.getCrawlerContext().getResponseEntity()).ifPresent(e -> {
             switch(e.getType()) {
             case ByteArray:
-                Optional.ofNullable((byte[]) e.getContent())
-                        .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
+                if (e.getContent() instanceof byte[]) {
+                    Optional.ofNullable((byte[]) e.getContent())
+                            .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
+                }
                 break;
             case String:
-                Optional.ofNullable((String) e.getContent())
-                        .map(str -> str.getBytes())
-                        .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
+                if (e.getContent() instanceof String) {
+                    Optional.ofNullable((String) e.getContent())
+                            .map(str -> str.getBytes())
+                            .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
+                }
                 break;
             default:
                 throw new IllegalArgumentException();

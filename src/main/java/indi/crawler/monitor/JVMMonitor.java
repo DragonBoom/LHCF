@@ -75,7 +75,7 @@ public class JVMMonitor {
                 }
                 // 开始处理出租的上下文
                 // 获取出租上下文集合的副本
-                Object[] leaseds = pool.getLeased();
+                Object[] leaseds = pool.cloneLeased();
                 int cleanSize = 0;
                 for (Object obj : leaseds) {
                     CrawlerContext ctx = (CrawlerContext) obj;

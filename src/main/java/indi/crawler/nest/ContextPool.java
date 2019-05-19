@@ -7,6 +7,7 @@ import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -107,7 +108,7 @@ public class ContextPool implements Message {
         }
         return result;
     }
-
+    
     public CrawlerContext poll(Task task) {
         leasedsLock.lock();
         CrawlerContext ctx = null;
@@ -149,32 +150,37 @@ public class ContextPool implements Message {
             }
         }
         // 2
-        if (ctx == null) {
-            availablesLock.lock();
-            try {
-                // 按任务类型优先级取出队列
-                for (Entry<Task, PriorityQueue<CrawlerContext>> entry : availables.entrySet()) {
-                    PriorityQueue<CrawlerContext> queue = entry.getValue();
-                    // 再按上下文优先级取出上下文
-                    ctx = queue.poll();
-                    if (ctx != null) {
-                        break;
+        status.compareAndSet(-1, 0);
+        try {
+            if (ctx == null) {
+                availablesLock.lock();
+                try {
+                    // 按任务类型优先级取出队列
+                    for (Entry<Task, PriorityQueue<CrawlerContext>> entry : availables.entrySet()) {
+                        PriorityQueue<CrawlerContext> queue = entry.getValue();
+                        // 再按上下文优先级取出上下文
+                        ctx = queue.poll();
+                        if (ctx != null) {
+                            break;
+                        }
                     }
+                } finally {
+                    availablesLock.unlock();
                 }
-            } finally {
-                availablesLock.unlock();
             }
-        }
-        // finally
-        if (ctx != null) {
-            leasedsLock.lock();
-            try {
-                leaseds.add(ctx);
-            } finally {
-                leasedsLock.unlock();
+            // finally
+            if (ctx != null) {
+                leasedsLock.lock();
+                try {
+                    leaseds.add(ctx);
+                } finally {
+                    leasedsLock.unlock();
+                }
             }
+            return ctx;
+        } finally {
+            status.set(-1);
         }
-        return ctx;
     }
 
     /**
@@ -182,7 +188,7 @@ public class ContextPool implements Message {
      * 
      * @return
      */
-    public Object[] getLeased() {
+    public Object[] cloneLeased() {
         Object[] result = null;
         Lock lock = leasedsLock;// avoid get field
         lock.lock();
@@ -195,15 +201,7 @@ public class ContextPool implements Message {
     }
 
     public int getLeasedSize() {
-        Lock lock = leasedsLock;// avoid get field
-        lock.lock();
-        int size = 0;
-        try {
-            size = leaseds.size();
-        } finally {
-            lock.unlock();
-        }
-        return size;
+        return leaseds.size();
     }
 
     /**
@@ -220,26 +218,32 @@ public class ContextPool implements Message {
         return result;
     }
 
-    public int size() {
+    public int workableSize() {
         return availableSize() + deferrals.size();
     }
     
     public int availableSize() {
         int size = 0;
-        availablesLock.lock();
-        try {
-            for (Entry<Task, PriorityQueue<CrawlerContext>> e : availables.entrySet()) {
-                size += e.getValue().size();
-            }
-        } finally {
-            availablesLock.unlock();
+        for (Entry<Task, PriorityQueue<CrawlerContext>> e : availables.entrySet()) {
+            size += e.getValue().size();
         }
         return size;
     }
     
+    /**
+     * 用于防止刚好在 可租与出租队列之间交换元素时 进行是否为空的检查
+     * 
+     * <p>-1 表示空闲；1表示正在查是否为空；0 表示正在同时修改可租/已租队列
+    */
+    private AtomicInteger status = new AtomicInteger();
     
     public boolean isEmpty() {
-        return getLeasedSize() == 0 && size() == 0;
+        status.compareAndSet(0, 1);
+        try {
+            return getLeasedSize() == 0 && workableSize() == 0;
+        } finally {
+            status.set(-1);
+        }
     }
     
 

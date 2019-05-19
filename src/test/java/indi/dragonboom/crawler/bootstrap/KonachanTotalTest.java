@@ -71,7 +71,7 @@ public class KonachanTotalTest {
             int statusCode = response.getStatusLine().getStatusCode();
             if (statusCode != 200) {
                 // 若响应错误，则不处理
-                log.error("响应错误，状态码为 {}" + statusCode);
+                log.error("响应错误，状态码为 {}", statusCode);
                 return new LinkedList<>();
             } else {
                 // 若响应没问题，则标签确实不存在，需要中止爬虫，手动处理
@@ -141,7 +141,8 @@ public class KonachanTotalTest {
 
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "");// 启用HTTPS代理
         CrawlerJob job = new CrawlerJob();
-        job.withContextPoolMonitor()
+        job
+                .withContextPoolMonitor()
                 .withCloseableMonitor()
                 .withHTTPProxy("127.0.0.1", 1080)
                 .withTask("Download")

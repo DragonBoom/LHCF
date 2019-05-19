@@ -15,16 +15,6 @@ import lombok.AllArgsConstructor;
 public abstract class CacheInterceptor extends HttpInterceptor {
     private Task task;
 
-    @Override
-    public void executeRequest(InterceptorContext iCtx) {
-        CrawlerContext ctx = iCtx.getCrawlerContext();
-        if (!ctx.getTask().equals(task)) {
-            super.executeRequest(iCtx);
-            return;
-        }
-        executeRequestByCache(iCtx);
-    }
-
     /**
      * 执行普通的发起请求，供子类调用
      */
@@ -32,7 +22,9 @@ public abstract class CacheInterceptor extends HttpInterceptor {
         super.executeRequest(iCtx);
     }
 
-    public abstract void executeRequestByCache(InterceptorContext iCtx);
+    public void executeRequestByCache(InterceptorContext iCtx) {
+        this.executeRequestPlain(iCtx);
+    }
 
     @Override
     public void receiveResponse(InterceptorContext iCtx) {
@@ -51,6 +43,29 @@ public abstract class CacheInterceptor extends HttpInterceptor {
         super.receiveResponse(iCtx);
     }
 
-    public abstract void receiveResponseByCache(InterceptorContext iCtx);
+    public void receiveResponseByCache(InterceptorContext iCtx) {
+        this.receiveResponsePlain(iCtx);
+    }
+    
+    /**
+     * 供子类调用
+     */
+    protected void afterHandleResultPlain(InterceptorContext iCtx) {
+        super.afterHandleResult(iCtx);
+    }
+    
+    public void afterHandleResultByCache(InterceptorContext iCtx) {
+        this.afterHandleResultPlain(iCtx);
+    }
+
+    @Override
+    protected void afterHandleResult(InterceptorContext iCtx) {
+        CrawlerContext ctx = iCtx.getCrawlerContext();
+        if (!ctx.getTask().equals(task)) {
+            super.afterHandleResult(iCtx);
+            return;
+        }
+        afterHandleResultByCache(iCtx);
+    }
 
 }

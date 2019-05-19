@@ -16,6 +16,7 @@ import com.google.common.io.ByteStreams;
 
 import indi.crawler.interceptor.InterceptorContext;
 import indi.crawler.nest.CrawlerContext;
+import indi.crawler.nest.CrawlerStatus;
 import indi.crawler.nest.ResponseEntity;
 import indi.crawler.task.Task;
 import indi.exception.WrapperException;
@@ -35,6 +36,7 @@ public class RedisCacheInterceptor extends CacheInterceptor {
         if (client == null) {
             // thread safe
             client = RedisClient.create(redisURI);
+            
             StatefulRedisConnection<String, ResponseEntity> connect = client.connect(new RedisCodec<String, ResponseEntity>() {
 
                 @Override
@@ -132,6 +134,7 @@ public class RedisCacheInterceptor extends CacheInterceptor {
         }
         URI uri = request.getURI();
         return sb.append(uri).toString();
+        
     }
 
     @Override
@@ -147,16 +150,31 @@ public class RedisCacheInterceptor extends CacheInterceptor {
             }
             // TODO: what about response ??
             return;
-        }
-        // 若没有缓存，则等后续步骤读取完响应后缓存响应
-        super.receiveResponsePlain(iCtx);
-        List<Throwable> throwables = ctx.getThrowables();
-        // 若响应不为空且没有发生过异常，则缓存该请求
-        if (ctx.getResponse() != null && (throwables == null || throwables.size() == 0)) {
-            ResponseEntity responseEntity = ctx.getResponseEntity();
-            commands.hset(HKEY, field, responseEntity);
+        } else {
+            // 若没有缓存，则继续后续步骤
+            super.receiveResponsePlain(iCtx);
         }
         
     }
+
+    @Override
+    public void afterHandleResultByCache(InterceptorContext iCtx) {
+        CrawlerContext ctx = iCtx.getCrawlerContext();
+        String field = generateField(ctx.getRequest());
+        if (!commands.hexists(HKEY, field)) {
+            List<Throwable> throwables = ctx.getThrowables();
+            // 若响应不为空且没有发生过异常，则缓存该请求
+            if (ctx.getResponse() != null && (throwables == null || throwables.size() == 0)
+                    && (ctx.getStatus().equals(CrawlerStatus.FINISHED) || ctx.getStatus().equals(CrawlerStatus.RUNNING))) {
+                ResponseEntity responseEntity = ctx.getResponseEntity();
+                commands.hset(HKEY, field, responseEntity);
+            }
+        }
+
+        // 进行后续步骤
+        super.afterHandleResultByCache(iCtx);
+    }
+    
+   
 
 }
