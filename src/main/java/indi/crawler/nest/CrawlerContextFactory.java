@@ -41,7 +41,7 @@ public class CrawlerContextFactory {
         CrawlerContext ctx = new CrawlerContext();
         ctx.setController(controller);
         // 从Task中复制属性
-        BeanUtils.copyProperties(task, ctx)
+        BeanUtils.copySelectedProperties(task, ctx)
                 .copy("host")
                 .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
                 .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）

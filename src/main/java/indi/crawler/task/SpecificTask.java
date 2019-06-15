@@ -11,6 +11,7 @@ import indi.util.Cleanupable;
 
 /**
  * Task + URI + RequestEntity
+ * 
  * @author DragonBoom
  *
  */

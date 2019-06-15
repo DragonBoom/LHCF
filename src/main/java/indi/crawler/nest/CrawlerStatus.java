@@ -7,7 +7,15 @@ package indi.crawler.nest;
  *
  */
 public enum CrawlerStatus {
-    CREATED("Created"), RUNNING("Running"), PENDING("Pending"), DEFERRED("Deferred"),
+    CREATED("Created"), RUNNING("Running"),
+    /**
+     * 等待中
+     */
+    PENDING("Pending"),
+    /**
+     * 延迟处理
+     */
+    DEFERRED("Deferred"),
     /**
      * 被用户中断
      */
@@ -19,7 +27,12 @@ public enum CrawlerStatus {
     /**
      * 任务无法完成
      */
-    INTERRUPTED("Interrupted");
+    INTERRUPTED("Interrupted"),
+    /**
+     * 阻塞中（需等待其他任务完成）
+     */
+    BLOCKING("Blocking")
+    ;
 
     private String desc;
 

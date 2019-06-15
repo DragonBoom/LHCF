@@ -1,4 +1,4 @@
-package indi.crawler.processor;
+package indi.crawler.processor.http;
 
 import java.util.Iterator;
 import java.util.List;
@@ -18,22 +18,24 @@ import indi.crawler.nest.CrawlerContext;
 import indi.crawler.nest.CrawlerController;
 import indi.crawler.nest.ResponseEntity;
 import indi.crawler.nest.ResponseEntity.TYPE;
+import indi.crawler.processor.ProcessorContext;
+import indi.crawler.processor.ProcessorResult;
 import indi.crawler.result.ResultHandler;
 import indi.crawler.task.SpecificTask;
 
 /**
- * 包含HTTP爬虫的处理逻辑
+ * 负责处理Http连接。包含HTTP爬虫的处理逻辑
  * 
  * @author DragonBoom
  *
  */
-public class HTTPProcessor extends Processor {
+public class HTTPConnectionProcessor extends HttpProcessor {
     private static final String DEFAULT_CHARSET = "utf-8";
     private static final int DEFAULT_MAX_ROUTE = Integer.MAX_VALUE;
     private static final int DEFAULT_MAX_PER_ROUTE = Integer.MAX_VALUE;
     private HttpClient client;
     
-    public HTTPProcessor() {
+    public HTTPConnectionProcessor() {
         init();
     }
 
@@ -44,7 +46,10 @@ public class HTTPProcessor extends Processor {
         client = HttpClientBuilder.create().setConnectionManager(manager).build();
     }
 
-    public HttpResponse executeRequest(CrawlerContext ctx) throws Exception {
+    @Override
+    protected ProcessorResult executeRequest0(ProcessorContext pCtx) throws Exception {
+        CrawlerContext ctx = pCtx.getCrawlerContext();
+        
         HttpRequestBase request = ctx.getRequest();
         HttpResponse response = null;
         HttpHost host = ctx.getHost();// TODO
@@ -53,10 +58,13 @@ public class HTTPProcessor extends Processor {
         else
             response = client.execute(host, request);
         ctx.setResponse(response);
-        return response;
+        return ProcessorResult.CONTINUE_STAGE;
     }
 
-    public ResponseEntity receiveResponse(CrawlerContext ctx) throws Exception {
+    @Override
+    protected ProcessorResult receiveResponse0(ProcessorContext pCtx) throws Exception {
+        CrawlerContext ctx = pCtx.getCrawlerContext();
+
         String charset = null;
         // TODO
         charset = Optional.ofNullable(charset).orElse(DEFAULT_CHARSET);
@@ -83,33 +91,42 @@ public class HTTPProcessor extends Processor {
         }
         EntityUtils.consume(entity);// 结束响应
         responseEntity.setContent(resultV);
-        return responseEntity;
+
+        return ProcessorResult.CONTINUE_STAGE;
     }
 
-    public void handleResult(CrawlerContext ctx) throws Exception {
+    @Override
+    protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Exception {
+        CrawlerContext ctx = pCtx.getCrawlerContext();
+        
         ResultHandler handler = ctx.getTask().getResultHandler();
-        if (handler == null) {
-            return;
+        if (handler != null) {
+            List<SpecificTask> tasks = handler.process(ctx);
+            if (tasks != null) {
+                ctx.setChilds(tasks);
+            }
         }
-        List<SpecificTask> tasks = handler.process(ctx);
-        if (tasks == null) {
-            return;
-        }
-        ctx.setChilds(tasks);
+        return ProcessorResult.CONTINUE_STAGE;
     }
     
     /**
      * 添加新任务
      */
-    public void afterHandleResult(CrawlerContext ctx) throws Exception {
+    @Override
+    protected ProcessorResult afterHandleResult0(ProcessorContext pCtx) throws Exception {
+        CrawlerContext ctx = pCtx.getCrawlerContext();
+        
         List<SpecificTask> tasks = ctx.getChilds();
-        Iterator<SpecificTask> i = tasks.iterator();
-        CrawlerController controller = ctx.getController();
-        while (i.hasNext()) {
-            if (!controller.offer(i.next().toCrawlerContext(controller))) {
-                i.remove(); // 若无法存入上下文池（重复任务），则将其移除
+        if (tasks != null) {
+            Iterator<SpecificTask> i = tasks.iterator();
+            CrawlerController controller = ctx.getController();
+            while (i.hasNext()) {
+                if (!controller.offer(i.next().toCrawlerContext(controller))) {
+                    i.remove(); // 若无法存入上下文池（重复任务），则将其移除
+                }
             }
+            ctx.setChilds(tasks);
         }
-        ctx.setChilds(tasks);
+        return ProcessorResult.CONTINUE_STAGE;
     }
 }

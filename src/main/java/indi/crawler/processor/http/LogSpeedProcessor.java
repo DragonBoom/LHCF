@@ -1,16 +1,18 @@
-package indi.crawler.interceptor.http;
+package indi.crawler.processor.http;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 
-import indi.crawler.interceptor.InterceptorContext;
 import indi.crawler.monitor.CloseableMonitor;
+import indi.crawler.processor.ProcessorContext;
+import indi.crawler.processor.ProcessorResult;
 
-public class LogSpeedInterceptor extends HttpInterceptor {
+public class LogSpeedProcessor extends HttpProcessor {
     private AtomicLong downloadByteCount = new AtomicLong();
 
     @Override
-    public void afterReceiveResponse(InterceptorContext ctx) {
+    protected ProcessorResult handleResult0(ProcessorContext ctx) throws Throwable {
         Optional.of(ctx.getCrawlerContext().getResponseEntity()).ifPresent(e -> {
             switch(e.getType()) {
             case ByteArray:
@@ -30,11 +32,11 @@ public class LogSpeedInterceptor extends HttpInterceptor {
                 throw new IllegalArgumentException();
             }
         });
-        CloseableMonitor.setToLogAtEnd(new StringBuilder()
+        Map<String, String> toLogAtEndMap = CloseableMonitor.getToLogAtEndMap();
+        toLogAtEndMap.put("LogSpeed", new StringBuilder()
                 .append("共下载 ").append(downloadByteCount.get() / 1024 / 1024).append(" mb")
                 .toString());
-        
-        super.afterReceiveResponse(ctx);
+        return ProcessorResult.KEEP_GOING;
     }
 
 }

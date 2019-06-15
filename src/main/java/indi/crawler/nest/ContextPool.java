@@ -3,6 +3,7 @@ package indi.crawler.nest;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
@@ -11,11 +12,20 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableMap.Builder;
+
 import indi.crawler.recoder.CommonRecorder;
 import indi.crawler.recoder.Recorder;
 import indi.crawler.task.Task;
 import indi.util.Message;
 
+/**
+ * TODO: 考虑把等待队列中的任务移到Redis/消息队列中，以对付任务量过大/需要保存任务记录的情况
+ * 
+ * @author DragonBoom
+ *
+ */
 public class ContextPool implements Message {
     private static final int DEFAULT_RECENTLY_WAKE_UP = 0;
 
@@ -24,7 +34,7 @@ public class ContextPool implements Message {
      * 使用Map结构，使得可以由Task直接找到其就绪队列<br>
      * 使用TreeMap，使得取值可以按照优先顺序进行<br>
      */
-    private TreeMap<Task, PriorityQueue<CrawlerContext>> availables;
+    private TreeMap<Task, ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>>> availables;
     /**
      * 等待队列
      */
@@ -68,6 +78,7 @@ public class ContextPool implements Message {
             }
         }
         boolean result = false;
+        // FIXME: 不需要根据status判断状态
         // 根据CrawlerStatus判断任务状态
         if (ctx.getStatus() == CrawlerStatus.DEFERRED) {
             // 缓存延时任务
@@ -89,22 +100,28 @@ public class ContextPool implements Message {
                 result = true;
             }
         }
-        if (ctx.getStatus() == CrawlerStatus.CREATED || ctx.getStatus() == CrawlerStatus.RUNNING) {
-            // 添加就绪任务
-            Task task = ctx.getTask();
-            availablesLock.lock();
-            try {
-                // !!! 大坑！对TreeMap而言，仅以比较结果，而不是equals方法判断映射结果
-                // 因此，需要保证treeMap的key的比较结果都不同，才能保证key/value间是__映射__关系
-                PriorityQueue<CrawlerContext> queue = availables.get(task);
-                if (queue == null) {
-                    queue = new PriorityQueue<>();
-                    availables.put(task, queue);
-                }
-                result = queue.offer(ctx);
-            } finally {
-                availablesLock.unlock();
-            }
+        
+        // 添加任务
+        Task task = ctx.getTask();
+        availablesLock.lock();
+        try {
+            // !!! 大坑！对TreeMap而言，仅以比较结果，而不是equals方法判断映射结果
+            // 因此，需要保证treeMap的key的比较结果都不同，才能保证key/value间是__映射__关系
+            ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>> statusMap = Optional.ofNullable(availables.get(task))
+                    .orElseGet(() -> {
+                        Builder<CrawlerStatus, PriorityQueue<CrawlerContext>> imMapBuilder = ImmutableMap.builder();
+                        for (CrawlerStatus status : CrawlerStatus.values()) {
+                            imMapBuilder.put(status, new PriorityQueue<>());
+                        }
+                        ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>> imMap = imMapBuilder.build();
+                        availables.put(task, imMap);
+                        return imMap;
+                    });
+            
+            PriorityQueue<CrawlerContext> queue = statusMap.get(ctx.getStatus());
+            result = queue.offer(ctx);
+        } finally {
+            availablesLock.unlock();
         }
         return result;
     }
@@ -113,7 +130,7 @@ public class ContextPool implements Message {
         leasedsLock.lock();
         CrawlerContext ctx = null;
         try {
-            PriorityQueue<CrawlerContext> priorityQueue = availables.get(task);
+            PriorityQueue<CrawlerContext> priorityQueue = availables.get(task).get(CrawlerStatus.CREATED);
             ctx = priorityQueue.poll();
         } finally {
             leasedsLock.unlock();
@@ -156,8 +173,9 @@ public class ContextPool implements Message {
                 availablesLock.lock();
                 try {
                     // 按任务类型优先级取出队列
-                    for (Entry<Task, PriorityQueue<CrawlerContext>> entry : availables.entrySet()) {
-                        PriorityQueue<CrawlerContext> queue = entry.getValue();
+                    // FIXME:
+                    for (Entry<Task, ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>>> entry : availables.entrySet()) {
+                        PriorityQueue<CrawlerContext> queue = entry.getValue().get(CrawlerStatus.CREATED);
                         // 再按上下文优先级取出上下文
                         ctx = queue.poll();
                         if (ctx != null) {
@@ -224,8 +242,11 @@ public class ContextPool implements Message {
     
     public int availableSize() {
         int size = 0;
-        for (Entry<Task, PriorityQueue<CrawlerContext>> e : availables.entrySet()) {
-            size += e.getValue().size();
+        for (Entry<Task, ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>>> e : availables.entrySet()) {
+            ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>> imMap = e.getValue();
+            for (Entry<CrawlerStatus, PriorityQueue<CrawlerContext>> e1 : imMap.entrySet()) {
+                size += e1.getValue().size();
+            }
         }
         return size;
     }
@@ -253,9 +274,15 @@ public class ContextPool implements Message {
         sb.append("availables--");
         availablesLock.lock();
         try {
-            for (Entry<Task, PriorityQueue<CrawlerContext>> e : availables.entrySet()) {
-                sb.append(" [ ").append(e.getKey().getName()).append("-").append(e.getValue().size())
-                        .append(" ] ");
+            for (Entry<Task, ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>>> e : availables.entrySet()) {
+                ImmutableMap<CrawlerStatus, PriorityQueue<CrawlerContext>> imMap = e.getValue();
+                for (Entry<CrawlerStatus, PriorityQueue<CrawlerContext>> e1 : imMap.entrySet()) {
+                    int queueSize = e1.getValue().size();
+                    if (queueSize > 0) {
+                        sb.append(" [ ").append(e.getKey().getName()).append("-").append(e1.getKey()).append(":")
+                                .append(queueSize).append(" ] ");
+                    }
+                }
             }
         } finally {
             availablesLock.unlock();

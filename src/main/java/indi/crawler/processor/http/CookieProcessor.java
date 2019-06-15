@@ -1,20 +1,21 @@
-package indi.crawler.interceptor.http;
+package indi.crawler.processor.http;
 
 import java.net.URI;
 
 import org.apache.http.Header;
 import org.apache.http.client.methods.HttpRequestBase;
 
-import indi.crawler.interceptor.InterceptorContext;
 import indi.crawler.nest.CrawlerContext;
+import indi.crawler.processor.ProcessorContext;
+import indi.crawler.processor.ProcessorResult;
 import indi.crawler.task.Task;
 
-public class CookieInterceptor extends HttpInterceptor {
+public class CookieProcessor extends HttpProcessor {
 
     // attach cookie
     @Override
-    public void executeRequest(InterceptorContext hCtx) {
-        CrawlerContext ctx = hCtx.getCrawlerContext();
+    protected ProcessorResult executeRequest0(ProcessorContext pCtx) throws Throwable {
+        CrawlerContext ctx = pCtx.getCrawlerContext();
         Task task = ctx.getTask();
         URI uri = ctx.getUri();
         HttpRequestBase request = ctx.getRequest();
@@ -25,19 +26,19 @@ public class CookieInterceptor extends HttpInterceptor {
                 request.addHeader("Cookie", cookies);
         }
         
-        super.executeRequest(hCtx);
+        return ProcessorResult.KEEP_GOING;
     }
     
     @Override
-    public void afterReceiveResponse(InterceptorContext hCtx) {
+    protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Throwable {
         // save cookie
-        CrawlerContext ctx = hCtx.getCrawlerContext();
+        CrawlerContext ctx = pCtx.getCrawlerContext();
         if (ctx.getTask().isKeepReceiveCookie()) {
             for (Header h : ctx.getResponse().getHeaders("Set-Cookie")) {
                 ctx.getTask().getCookieStore().add(h.getValue(), ctx.getUri());
             }
         }
         
-        super.afterReceiveResponse(hCtx);
+        return ProcessorResult.KEEP_GOING;
     }
 }

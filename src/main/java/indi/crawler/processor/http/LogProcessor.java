@@ -1,14 +1,15 @@
-package indi.crawler.interceptor.http;
+package indi.crawler.processor.http;
 
 import org.apache.http.Header;
 
-import indi.crawler.interceptor.InterceptorContext;
 import indi.crawler.nest.CrawlerContext;
+import indi.crawler.processor.ProcessorContext;
+import indi.crawler.processor.ProcessorResult;
 import indi.crawler.task.TaskType;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-public class LogInterceptor extends HttpInterceptor {
+public class LogProcessor extends HttpProcessor {
 
 	private String stringifyHeaders(Header[] headers) {
 		StringBuilder sb = new StringBuilder();
@@ -28,13 +29,13 @@ public class LogInterceptor extends HttpInterceptor {
 	}
 
 	@Override
-	public void executeRequest(InterceptorContext iCtx) {
+	protected ProcessorResult executeRequest0(ProcessorContext iCtx) throws Throwable {
 		CrawlerContext ctx = iCtx.getCrawlerContext();
 		if (ctx.getTask().getType() == TaskType.HTTP_TOPICAL) {
 		    log.info(stringifyHTTPRequest(ctx));
 		}
 		
-		super.executeRequest(iCtx);
+		return ProcessorResult.KEEP_GOING;
 	}
 
 	private String stringifyHTTPResponse(CrawlerContext ctx) {
@@ -50,17 +51,17 @@ public class LogInterceptor extends HttpInterceptor {
 	}
 
 	@Override
-	public void afterReceiveResponse(InterceptorContext hCtx) {
+	protected ProcessorResult handleResult0(ProcessorContext hCtx) throws Throwable {
 		CrawlerContext ctx = hCtx.getCrawlerContext();
 		if (ctx.getTask().getType() == TaskType.HTTP_TOPICAL) {
 		    log.info(stringifyHTTPResponse(ctx));
 		}
 		
-		super.afterReceiveResponse(hCtx);
+		return ProcessorResult.KEEP_GOING;
 	}
 
 	@Override
-	public void afterHandleResult(InterceptorContext iCtx) {
+	protected ProcessorResult afterHandleResult0(ProcessorContext iCtx) throws Throwable {
 		CrawlerContext ctx = iCtx.getCrawlerContext();
 		if (ctx.getChilds() != null && ctx.getChilds().size() > 0) {
 			StringBuilder sb = new StringBuilder("> After handle result, Add [")
@@ -68,6 +69,6 @@ public class LogInterceptor extends HttpInterceptor {
 			log.info(sb.toString());
 		}
 		
-		super.afterHandleResult(iCtx);
+		return ProcessorResult.KEEP_GOING;
 	}
 }

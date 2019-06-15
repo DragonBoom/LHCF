@@ -1,15 +1,10 @@
 package indi.crawler.nest;
 
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import indi.crawler.bootstrap.CrawlerJob;
-import indi.crawler.interceptor.InterceptorChain;
 import indi.crawler.monitor.JVMMonitor;
-import indi.crawler.processor.HTTPProcessor;
-import indi.crawler.processor.Processor;
-import indi.crawler.task.TaskType;
+import indi.crawler.processor.ProcessorChain;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -28,11 +23,10 @@ public class CrawlerController {
     @Getter
     @Setter
     private CrawlerThreadPool threadPool;
-    private Map<TaskType, Processor> processorMap;
     @Getter
     private CrawlerJob job;
     @Getter
-    private InterceptorChain chain;
+    private ProcessorChain chain;
     @Getter
     @Setter
     private CrawlerContextFactory contextFactory;
@@ -42,13 +36,9 @@ public class CrawlerController {
      */
     private void init() {
         contextPool = new ContextPool();
-        processorMap = new HashMap<>();
         threadPool = new CrawlerThreadPool(this);
 
-        // 注册处理器
-        registerProcessor(TaskType.HTTP_TOPICAL, new HTTPProcessor());
-        
-        chain = new InterceptorChain();
+        chain = new ProcessorChain();
         
         contextFactory = new CrawlerContextFactory(this);
         
@@ -62,12 +52,6 @@ public class CrawlerController {
 
     public ContextPool getPool() {
         return contextPool;
-    }
-
-    private void registerProcessor(TaskType type, Processor processor) {
-        if (!processorMap.containsKey(type)) {
-            processorMap.put(type, processor);
-        }
     }
 
     /**

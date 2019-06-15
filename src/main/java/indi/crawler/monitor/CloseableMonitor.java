@@ -1,6 +1,8 @@
 package indi.crawler.monitor;
 
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 
 import indi.crawler.bootstrap.CrawlerJob;
 import lombok.Getter;
@@ -16,7 +18,7 @@ public class CloseableMonitor {
     private CrawlerJob job;
     @Getter
     @Setter
-    private static String toLogAtEnd = "";
+    private static Map<String, String> toLogAtEndMap = new HashMap<>();
 
     private void init() {
         new CloseableMonitorThread().start();
@@ -39,6 +41,13 @@ public class CloseableMonitor {
         @Override
         public void run() {
             begin = new Date();
+            
+            try {
+                Thread.sleep(2 * SLEEP_MILLIS);
+            } catch (InterruptedException e1) {
+                // TODO Auto-generated catch block
+                e1.printStackTrace();
+            }
 
             while (true) {
                 try {
@@ -53,7 +62,10 @@ public class CloseableMonitor {
                             "## Closeable Monitor close the progress which had been run {} {} and use total memory {} mb .",
                             millis > 60000 ? millis / 60000 : millis / 1000,
                             millis > 60000 ? "minutes" : "seconds", Runtime.getRuntime().totalMemory() / 1024 / 1024);
-                    log.info(toLogAtEnd);
+                    
+                    for (Map.Entry<String, String> e : toLogAtEndMap.entrySet()) {
+                        log.info(e.getValue());
+                    }
                     System.exit(0);
                 }
             }

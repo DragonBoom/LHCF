@@ -21,7 +21,7 @@
 		<!--这个输出控制台的配置，这里输出除了warn和error级别的信息到System.out -->
 		<Console name="console_out_appender" target="SYSTEM_OUT">
 			<!-- 控制台只输出level及以上级别的信息(onMatch),其他的直接拒绝(onMismatch) . -->
-			<ThresholdFilter level="DEBUG" onMatch="ACCEPT"
+			<ThresholdFilter level="INFO" onMatch="ACCEPT"
 				onMismatch="DENY" />
 			<!-- 输出日志的格式 -->
 			<PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %5p --- [%t] (%F:%L) %m%n" />

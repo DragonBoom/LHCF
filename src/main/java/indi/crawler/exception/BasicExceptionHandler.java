@@ -14,9 +14,10 @@ import org.apache.http.client.ClientProtocolException;
 
 import com.google.common.collect.ImmutableMap;
 
-import indi.crawler.interceptor.InterceptorContext;
 import indi.crawler.nest.CrawlerContext;
 import indi.crawler.nest.CrawlerStatus;
+import indi.crawler.processor.ProcessorContext;
+import indi.crawler.task.Task;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -26,24 +27,25 @@ import lombok.extern.slf4j.Slf4j;
  *
  */
 @Slf4j
-public class BasicExceptionHandler implements CrawlerExceptionHandler {
+public class BasicExceptionHandler implements ExceptionHandler {
     /** 5s */
     private static final long DEFAULT_ADDITIONAL_WAIT_MAX_MILLIS = 5000;
     
     private ImmutableMap<Class<? extends Throwable>, BiFunction<CrawlerContext, Throwable, HandleResult>> handlers; 
     
+    private static final BiFunction<CrawlerContext, Throwable, HandleResult> RECOVER_HANDLER = (ctx, e) -> HandleResult.RECOVER;
+    
     protected void init() {
         // list -> 1
         // build Fun
-        BiFunction<CrawlerContext, Throwable, HandleResult> recoverFun = (ctx, e) -> HandleResult.RECOVER;
-        // build map
+        // build exception -> handler map
         handlers = ImmutableMap
                 .<Class<? extends Throwable>, BiFunction<CrawlerContext, Throwable, HandleResult>>builder()
-                .put(ConnectionClosedException.class, recoverFun)
-                .put(SSLHandshakeException.class, recoverFun)
-                .put(SSLException.class, recoverFun)
-                .put(NoHttpResponseException.class, recoverFun)
-                .put(TruncatedChunkException.class, recoverFun)
+                .put(ConnectionClosedException.class, RECOVER_HANDLER)
+                .put(SSLHandshakeException.class, RECOVER_HANDLER)
+                .put(SSLException.class, RECOVER_HANDLER)
+                .put(NoHttpResponseException.class, RECOVER_HANDLER)
+                .put(TruncatedChunkException.class, RECOVER_HANDLER)
                 .put(ClientProtocolException.class, (ctx, e) -> {
                     // 报该异常表示URI格式有问题？
                     log.warn("ClientProtocolException: {}", ctx.getUri());
@@ -53,6 +55,7 @@ public class BasicExceptionHandler implements CrawlerExceptionHandler {
                 .put(RuntimeException.class, (ctx, e) -> {
                     log.error("该异常无法处理，即将终止爬虫任务 {} \n {}", e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
                     e.printStackTrace();
+                    ctx.setStatus(CrawlerStatus.INTERRUPTED);// 标记任务无法完成，等待被回收
                     return HandleResult.NOT_RECOVER;
                 })
                 .build();
@@ -64,17 +67,19 @@ public class BasicExceptionHandler implements CrawlerExceptionHandler {
     }
 
     @Override
-    public void handleException(InterceptorContext hCtx, Throwable throwable) {
+    public void handleException(ProcessorContext hCtx, Throwable throwable) {
         CrawlerContext ctx = hCtx.getCrawlerContext();
         ctx.setStatus(CrawlerStatus.PENDING);
         ctx.addThrowables(throwable);
+        
+        Task task = ctx.getTask();
 
         BiFunction<CrawlerContext, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
-            log.error("该异常无法处理，即将终止爬虫任务 {} \n {}", e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
+            log.error("该异常目前尚无法处理，将尝试再次处理-{} {} \n {}", task.getName(), e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
             e.printStackTrace();
             ctx0.setStatus(CrawlerStatus.INTERRUPTED);
-            return HandleResult.NOT_RECOVER;
+            return HandleResult.RECOVER;
         });
         
         HandleResult handleResult = handler.apply(ctx, throwable);

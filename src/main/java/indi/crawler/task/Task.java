@@ -16,21 +16,21 @@ import org.apache.http.message.HeaderGroup;
 
 import indi.crawler.bootstrap.CrawlerJob;
 import indi.crawler.cookies.CookieStore;
-import indi.crawler.exception.CrawlerExceptionHandler;
-import indi.crawler.exception.LogCrawlerExceptionHandler;
-import indi.crawler.interceptor.Interceptor;
-import indi.crawler.interceptor.http.CookieInterceptor;
-import indi.crawler.interceptor.http.LogInterceptor;
-import indi.crawler.interceptor.http.RedisCacheInterceptor;
-import indi.crawler.interceptor.http.SpecificTaskBlockingWaitInterceptor;
+import indi.crawler.exception.ExceptionHandler;
+import indi.crawler.exception.LogExceptionHandler;
 import indi.crawler.nest.ResponseEntity.TYPE;
+import indi.crawler.processor.Processor;
+import indi.crawler.processor.http.CookieProcessor;
+import indi.crawler.processor.http.LogProcessor;
+import indi.crawler.processor.http.RedisCacheProcessor;
+import indi.crawler.processor.http.SpecificTaskBlockingWaitProcessor;
 import indi.crawler.result.ResultHandler;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
 
 /**
- * 该类描述一个独立的爬虫任务
+ * 该类描述某一“类”独立的爬虫任务
  * 
  * @author DragonBoom
  *
@@ -72,10 +72,10 @@ public class Task implements Comparable<Task> {
      * 历史执行任务数
      */
     private AtomicLong totalCounts = new AtomicLong();
-    private List<Interceptor> customInterceptors;// 配置的拦截器
+    private List<Processor> customProcessors;// 配置的拦截器
     @Setter
-    private List<Interceptor> crawlerInterceptors;// 真正的拦截器
-    private List<CrawlerExceptionHandler> crawlerExceptionHandler;
+    private List<Processor> crawlerProcessors;// 真正的拦截器
+    private List<ExceptionHandler> crawlerExceptionHandler;
 
     private TaskType type = TaskType.HTTP_TOPICAL;
     private TYPE resultType = TYPE.String;
@@ -226,7 +226,7 @@ public class Task implements Comparable<Task> {
 
         private void createIfNotExist() {
             Task task = this.task;
-            task.customInterceptors = Optional.ofNullable(task.customInterceptors).orElse(new LinkedList<>());
+            task.customProcessors = Optional.ofNullable(task.customProcessors).orElse(new LinkedList<>());
             task.crawlerExceptionHandler = Optional.ofNullable(task.crawlerExceptionHandler).orElse(new LinkedList<>());
         }
 
@@ -235,16 +235,16 @@ public class Task implements Comparable<Task> {
             return this;
         }
 
-        public Builder withCrawlerInterceptor(Interceptor handler) {
+        public Builder withCrawlerInterceptor(Processor handler) {
             createIfNotExist();
-            task.customInterceptors.add(handler);
+            task.customProcessors.add(handler);
             return this;
         }
 
         public Builder withLogDetail() {
             createIfNotExist();
-            task.customInterceptors.add(new LogInterceptor());
-            task.crawlerExceptionHandler.add(new LogCrawlerExceptionHandler());
+            task.customProcessors.add(new LogProcessor());
+            task.crawlerExceptionHandler.add(new LogExceptionHandler());
             return this;
         }
 
@@ -253,7 +253,7 @@ public class Task implements Comparable<Task> {
          */
         public Builder withBlockingWait(long millis) {
             createIfNotExist();
-            task.customInterceptors.add(new SpecificTaskBlockingWaitInterceptor(task, millis));
+            task.customProcessors.add(new SpecificTaskBlockingWaitProcessor(task, millis));
             return this;
         }
         
@@ -263,7 +263,7 @@ public class Task implements Comparable<Task> {
          */
         public Builder withRedisCache(String redisURI) {
             createIfNotExist();
-            task.customInterceptors.add(new RedisCacheInterceptor(task, redisURI));
+            task.customProcessors.add(new RedisCacheProcessor(redisURI));
             return this;
         }
 
@@ -296,7 +296,7 @@ public class Task implements Comparable<Task> {
 
         public Builder withKeepReceiveCookie() {
             task.keepReceiveCookie = true;
-            withCrawlerInterceptor(new CookieInterceptor());// 增加拦截器
+            withCrawlerInterceptor(new CookieProcessor());// 增加拦截器
             return this;
         }
 
@@ -320,8 +320,7 @@ public class Task implements Comparable<Task> {
         
         public CrawlerJob and() {
             Objects.requireNonNull(job);
-            build();
-            job.register(task);
+            job.register(build());
             return job;
         }
         

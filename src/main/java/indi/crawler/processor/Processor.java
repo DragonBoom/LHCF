@@ -1,11 +1,13 @@
 package indi.crawler.processor;
 
+import lombok.Getter;
+import lombok.Setter;
+
 /**
- * 描述一个爬虫任务的生命周期：发送请求 => 接收响应 => 处理响应
- * 
- * @author DragonBoom
- *
+ * 爬虫任务执行器，由ProcessorExcutor执行
  */
 public abstract class Processor {
-    
+    @Getter
+    @Setter
+    protected Processor next;
 }
