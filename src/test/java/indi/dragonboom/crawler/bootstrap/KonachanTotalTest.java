@@ -28,6 +28,10 @@ public class KonachanTotalTest {
     private static final String DOWNLOAD_PATH = "E:\\byCrawler\\konachan";
 
     static ResultHandler rh3 = (ctx) -> {
+        if (ctx.getResponseEntity().getContent() instanceof String) {
+            System.out.println("type error");
+            System.exit(-1);
+        }
         byte[] bytes = (byte[]) ctx.getResponseEntity().getContent();
         String uri = ctx.getUri().toString();
         String fileName = uri.substring(uri.lastIndexOf("/") + 1);
@@ -109,7 +113,7 @@ public class KonachanTotalTest {
         Objects.requireNonNull(html);
         
         Document doc = Jsoup.parse(html);
-        String prefix = "http://konachan.com";
+        String prefix = "https://konachan.com";
         if (!errorCheck(ctx, doc, tasks)) {
             return tasks;
         }
@@ -135,16 +139,16 @@ public class KonachanTotalTest {
 
     public static void main(String[] args) {
         Path path = Paths.get(DOWNLOAD_PATH);
+        FileUtils.createDirectoryIfNotExist(path);
 //        FileUtils.clearDirectory(path);
 //        log.info("清空目录");
-        FileUtils.createDirectoryIfNotExist(path);
 
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "");// 启用HTTPS代理
         CrawlerJob job = new CrawlerJob();
         job
                 .withContextPoolMonitor()
                 .withCloseableMonitor()
-                .withHTTPProxy("127.0.0.1", 1080)
+//                .withHTTPProxy("127.0.0.1", 1080)
                 .withTask("Download")
                     .withResultHandler(rh3)
                     .withResultType(TYPE.ByteArray)
