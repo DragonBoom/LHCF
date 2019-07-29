@@ -1,4 +1,4 @@
-package indi.crawler.nest;
+package indi.crawler.task;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
@@ -14,7 +14,7 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.StringEntity;
 
-import indi.crawler.task.Task;
+import indi.crawler.task.def.TaskDef;
 import indi.exception.WrapperException;
 import indi.util.BeanUtils;
 import lombok.AllArgsConstructor;
@@ -34,14 +34,21 @@ import lombok.ToString;
 @Getter
 @Setter
 @ToString
-public class CrawlerContextFactory {
+public class TaskFactory {
     private CrawlerController controller;
+    
+    public Task build(String taskName, final URI uri, String requestEntityString) {
+        TaskDef task = controller.getJob().getTaskDef(taskName);
+        return build(task, uri, requestEntityString);
+    }
 
-    public CrawlerContext createContext(Task task, final URI uri, String requestEntityString) {
-        CrawlerContext ctx = new CrawlerContext();
+    public Task build(TaskDef taskDef, final URI uri, String requestEntityStr) {
+        Task ctx = new Task();
+        ctx.setTaskDefName(taskDef.getName());
+        ctx.setRequestEntityStr(requestEntityStr);
         ctx.setController(controller);
         // 从Task中复制属性
-        BeanUtils.copySelectedProperties(task, ctx)
+        BeanUtils.copySelectedProperties(taskDef, ctx)
                 .copy("host")
                 .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
                 .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）
@@ -50,7 +57,7 @@ public class CrawlerContextFactory {
         HttpEntity requestEntity = null;
 
         // full request, combine url & request...
-        switch (task.getMethod()) {
+        switch (taskDef.getMethod()) {
         case GET:
             request = new HttpGet(uri);
             break;
@@ -67,9 +74,9 @@ public class CrawlerContextFactory {
             request = new HttpPut(uri);
             break;
         }
-        if (requestEntityString != null) {
+        if (requestEntityStr != null) {
             try {
-                requestEntity = new StringEntity(requestEntityString);
+                requestEntity = new StringEntity(requestEntityStr);
             } catch (UnsupportedEncodingException e) {
                 throw new WrapperException(e);
             }
@@ -79,7 +86,7 @@ public class CrawlerContextFactory {
             ((HttpEntityEnclosingRequestBase) request).setEntity(requestEntity);
         }
         request.setURI(uri);
-        request.setHeaders(task.getRequestHeaders());
+        request.setHeaders(taskDef.getRequestHeaders());
         // begin build header
         request.setHeader("Host", uri.getHost());
 //        // attach cookie
@@ -88,7 +95,7 @@ public class CrawlerContextFactory {
 //            if (cookies != null && cookies.length() > 1)
 //                request.addHeader("Cookie", cookies);
 //        }
-        RequestConfig config = task.getRequestConfigBuilder().build();
+        RequestConfig config = taskDef.getRequestConfigBuilder().build();
         if (config != null) {
             request.setConfig(config);
         }
@@ -97,8 +104,8 @@ public class CrawlerContextFactory {
         ctx.setRequestEntity(requestEntity);
         // 设置其他属性
         ctx.setUri(uri);
-        ctx.setTask(task);
-        ctx.setResponseEntity(new ResponseEntity(ctx, task.getResultType()));
+        ctx.setTaskDef(taskDef);
+        ctx.setResponseEntity(new ResponseEntity(ctx, taskDef.getResultType()));
         return ctx;
     }
 }

@@ -2,14 +2,15 @@ package indi.crawler.processor.http;
 
 import java.util.List;
 
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerStatus;
-import indi.crawler.nest.CrawlerThread;
 import indi.crawler.processor.Processor;
 import indi.crawler.processor.ProcessorContext;
 import indi.crawler.processor.ProcessorExecutor;
 import indi.crawler.processor.ProcessorResult;
 import indi.crawler.processor.ProcessorResult.Result;
+import indi.crawler.task.CrawlerController;
+import indi.crawler.task.CrawlerStatus;
+import indi.crawler.task.Task;
+import indi.crawler.thread.CrawlerThread;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -18,14 +19,14 @@ public class HTTPProcessorExecutor extends ProcessorExecutor {
     @Setter
     private HttpProcessor connectionProcessor;
 
-    public HTTPProcessorExecutor() {
-        this.connectionProcessor = new HTTPConnectionProcessor();
+    public HTTPProcessorExecutor(CrawlerController controller) {
+        this.connectionProcessor = new HTTPConnectionProcessor(controller);
     }
 
     @Override
     public ProcessorResult execute(ProcessorContext pCtx, List<Processor> processors) throws Throwable {
         Processor firstProcessor = processors.get(0);
-        CrawlerContext ctx = pCtx.getCrawlerContext();
+        Task ctx = pCtx.getCrawlerContext();
         initCrawlerContext(ctx);
         
         ProcessorResult result = null;
@@ -67,10 +68,10 @@ public class HTTPProcessorExecutor extends ProcessorExecutor {
      * 
      * @param ctx
      */
-    private void initCrawlerContext(CrawlerContext ctx) {
+    private void initCrawlerContext(Task ctx) {
         ctx.setStatus(CrawlerStatus.RUNNING);
         ctx.setAttempts(ctx.getAttempts() + 1);
-        ctx.getTask().addTotalCounts();
+        ctx.getTaskDef().addTotalCounts();
         ctx.setRegistration(System.currentTimeMillis());
         ctx.setThread((CrawlerThread) Thread.currentThread());
     }
@@ -80,10 +81,10 @@ public class HTTPProcessorExecutor extends ProcessorExecutor {
      * 
      * @param ctx
      */
-    private void finishCrawlerContext(CrawlerContext ctx) {
+    private void finishCrawlerContext(Task ctx) {
         ctx.setStatus(CrawlerStatus.FINISHED);
         // 主动移除爬虫
-        ctx.getController().getContextPool().removeLeased(ctx);
+        ctx.getController().getTaskPool().removeLeased(ctx);
     }
     
     private boolean isOver(ProcessorResult result) {

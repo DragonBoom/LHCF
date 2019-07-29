@@ -1,4 +1,4 @@
-package indi.crawler.nest;
+package indi.crawler.task;
 
 import java.io.Serializable;
 import java.io.UnsupportedEncodingException;
@@ -12,7 +12,7 @@ import lombok.ToString;
 
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"content"})
 @NoArgsConstructor
 public class ResponseEntity implements Serializable {
     private static final long serialVersionUID = 1L;

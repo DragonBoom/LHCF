@@ -2,10 +2,10 @@ package indi.crawler.processor.http;
 
 import org.apache.http.Header;
 
-import indi.crawler.nest.CrawlerContext;
 import indi.crawler.processor.ProcessorContext;
 import indi.crawler.processor.ProcessorResult;
-import indi.crawler.task.TaskType;
+import indi.crawler.task.Task;
+import indi.crawler.task.def.TaskType;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -19,9 +19,9 @@ public class LogProcessor extends HttpProcessor {
 		return sb.toString();
 	}
 
-	private String stringifyHTTPRequest(CrawlerContext ctx) {
+	private String stringifyHTTPRequest(Task ctx) {
 		StringBuilder sb = new StringBuilder("-> Send HTTP Request-> ");
-		String method = ctx.getTask().getMethod().name();
+		String method = ctx.getTaskDef().getMethod().name();
 		String uri = ctx.getUri().toString();
 		String headers = stringifyHeaders(ctx.getRequest().getAllHeaders());
 		sb.append(method).append(" ").append(uri).append(" [").append(headers).append("]");
@@ -30,15 +30,15 @@ public class LogProcessor extends HttpProcessor {
 
 	@Override
 	protected ProcessorResult executeRequest0(ProcessorContext iCtx) throws Throwable {
-		CrawlerContext ctx = iCtx.getCrawlerContext();
-		if (ctx.getTask().getType() == TaskType.HTTP_TOPICAL) {
+		Task ctx = iCtx.getCrawlerContext();
+		if (ctx.getTaskDef().getType() == TaskType.HTTP_TOPICAL) {
 		    log.info(stringifyHTTPRequest(ctx));
 		}
 		
 		return ProcessorResult.KEEP_GOING;
 	}
 
-	private String stringifyHTTPResponse(CrawlerContext ctx) {
+	private String stringifyHTTPResponse(Task ctx) {
 	    if (ctx.getResponse() != null) {
 	        StringBuilder sb = new StringBuilder("-<  Receive Response-> ");
 	        String uri = ctx.getUri().toString();
@@ -52,8 +52,8 @@ public class LogProcessor extends HttpProcessor {
 
 	@Override
 	protected ProcessorResult handleResult0(ProcessorContext hCtx) throws Throwable {
-		CrawlerContext ctx = hCtx.getCrawlerContext();
-		if (ctx.getTask().getType() == TaskType.HTTP_TOPICAL) {
+		Task ctx = hCtx.getCrawlerContext();
+		if (ctx.getTaskDef().getType() == TaskType.HTTP_TOPICAL) {
 		    log.info(stringifyHTTPResponse(ctx));
 		}
 		
@@ -62,7 +62,7 @@ public class LogProcessor extends HttpProcessor {
 
 	@Override
 	protected ProcessorResult afterHandleResult0(ProcessorContext iCtx) throws Throwable {
-		CrawlerContext ctx = iCtx.getCrawlerContext();
+		Task ctx = iCtx.getCrawlerContext();
 		if (ctx.getChilds() != null && ctx.getChilds().size() > 0) {
 			StringBuilder sb = new StringBuilder("> After handle result, Add [")
 					.append(ctx.getChilds().size()).append("] new Context to the Pool");

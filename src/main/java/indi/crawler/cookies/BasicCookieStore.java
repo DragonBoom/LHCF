@@ -2,10 +2,13 @@ package indi.crawler.cookies;
 
 import java.net.HttpCookie;
 import java.net.URI;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.StringTokenizer;
+
+import org.apache.logging.log4j.util.Strings;
 
 import indi.util.StringUtils;
 
@@ -15,15 +18,15 @@ public abstract class BasicCookieStore implements CookieStore {
 	}
 
 	/**
-	 * 获取domain对应的所有cookie
+	 * 获取domain对应的所有cookie，实现时注意确保返回的cookie不能重复
 	 */
-	abstract List<HttpCookie> get0(String domain);
+	protected abstract Collection<HttpCookie> get0(String domain);
 
 	/**
 	 * 將Cookie集合转换为Http请求的cookie字段
 	 */
 	protected String parseCookies(List<HttpCookie> cookies) {
-		return StringUtils.join(";", cookies);
+		return StringUtils.join("; ", cookies);
 	}
 
 	/**
@@ -35,7 +38,7 @@ public abstract class BasicCookieStore implements CookieStore {
 		LinkedList<String> domains = parseAllDomain(host);
 		LinkedList<HttpCookie> cookies = new LinkedList<>();
 		for (String domain : domains) {
-			List<HttpCookie> tmp = get0(domain);
+			Collection<HttpCookie> tmp = get0(domain);
 			if (tmp != null && tmp.size() > 0)
 				cookies.addAll(get0(domain));
 		}
@@ -43,9 +46,9 @@ public abstract class BasicCookieStore implements CookieStore {
 	}
 
 	/**
-	 * 储存cookie
+	 * 储存cookie，实现时注意cookie重复的情况
 	 */
-	abstract void add0(HttpCookie cookie);
+	protected abstract void add0(HttpCookie cookie);
 
 	protected final static int DEFAULT_COOKIE_VERSION = 0;
 
@@ -56,7 +59,8 @@ public abstract class BasicCookieStore implements CookieStore {
 		List<HttpCookie> cookies = HttpCookie.parse(setCookie);
 		String host = uri.getHost();
 		for (HttpCookie cookie : cookies) {
-			if (cookie.getDomain() == null || cookie.getDomain().equals("null")) {
+		    String domain = cookie.getDomain();
+			if (Strings.isEmpty(domain) || domain.equals("null")) {
 				cookie.setDomain(host);
 			}
 			cookie.setVersion(DEFAULT_COOKIE_VERSION);

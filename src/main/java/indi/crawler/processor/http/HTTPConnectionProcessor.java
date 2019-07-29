@@ -14,14 +14,14 @@ import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
 import org.apache.http.util.EntityUtils;
 
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerController;
-import indi.crawler.nest.ResponseEntity;
-import indi.crawler.nest.ResponseEntity.TYPE;
 import indi.crawler.processor.ProcessorContext;
 import indi.crawler.processor.ProcessorResult;
+import indi.crawler.result.HttpResultHelper;
 import indi.crawler.result.ResultHandler;
-import indi.crawler.task.SpecificTask;
+import indi.crawler.task.CrawlerController;
+import indi.crawler.task.ResponseEntity;
+import indi.crawler.task.ResponseEntity.TYPE;
+import indi.crawler.task.Task;
 
 /**
  * 负责处理Http连接。包含HTTP爬虫的处理逻辑
@@ -35,8 +35,11 @@ public class HTTPConnectionProcessor extends HttpProcessor {
     private static final int DEFAULT_MAX_PER_ROUTE = Integer.MAX_VALUE;
     private HttpClient client;
     
-    public HTTPConnectionProcessor() {
+    private CrawlerController controller;
+    
+    public HTTPConnectionProcessor(CrawlerController controller) {
         init();
+        this.controller = controller;
     }
 
     private void init() {
@@ -48,7 +51,7 @@ public class HTTPConnectionProcessor extends HttpProcessor {
 
     @Override
     protected ProcessorResult executeRequest0(ProcessorContext pCtx) throws Exception {
-        CrawlerContext ctx = pCtx.getCrawlerContext();
+        Task ctx = pCtx.getCrawlerContext();
         
         HttpRequestBase request = ctx.getRequest();
         HttpResponse response = null;
@@ -63,7 +66,7 @@ public class HTTPConnectionProcessor extends HttpProcessor {
 
     @Override
     protected ProcessorResult receiveResponse0(ProcessorContext pCtx) throws Exception {
-        CrawlerContext ctx = pCtx.getCrawlerContext();
+        Task ctx = pCtx.getCrawlerContext();
 
         String charset = null;
         // TODO
@@ -97,15 +100,14 @@ public class HTTPConnectionProcessor extends HttpProcessor {
 
     @Override
     protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Exception {
-        CrawlerContext ctx = pCtx.getCrawlerContext();
+        Task ctx = pCtx.getCrawlerContext();
         
-        ResultHandler handler = ctx.getTask().getResultHandler();
-        if (handler != null) {
-            List<SpecificTask> tasks = handler.process(ctx);
-            if (tasks != null) {
-                ctx.setChilds(tasks);
-            }
-        }
+        ResultHandler handler = ctx.getTaskDef().getResultHandler();
+        HttpResultHelper resultHelper = new HttpResultHelper(controller.getTaskFactory());
+        
+        handler.process(ctx, resultHelper);
+        List<Task> newTasks = resultHelper.getNewTask();
+        ctx.setChilds(newTasks);
         return ProcessorResult.CONTINUE_STAGE;
     }
     
@@ -114,14 +116,13 @@ public class HTTPConnectionProcessor extends HttpProcessor {
      */
     @Override
     protected ProcessorResult afterHandleResult0(ProcessorContext pCtx) throws Exception {
-        CrawlerContext ctx = pCtx.getCrawlerContext();
-        
-        List<SpecificTask> tasks = ctx.getChilds();
+        Task ctx = pCtx.getCrawlerContext();
+        List<Task> tasks = ctx.getChilds();
         if (tasks != null) {
-            Iterator<SpecificTask> i = tasks.iterator();
+            Iterator<Task> i = tasks.iterator();
             CrawlerController controller = ctx.getController();
             while (i.hasNext()) {
-                if (!controller.offer(i.next().toCrawlerContext(controller))) {
+                if (!controller.offer(i.next())) {
                     i.remove(); // 若无法存入上下文池（重复任务），则将其移除
                 }
             }

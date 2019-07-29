@@ -2,8 +2,8 @@ package indi.crawler.result;
 
 import java.util.List;
 
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.task.SpecificTask;
+import indi.crawler.task.Task;
+import indi.crawler.task.def.SpecificTask;
 
 public interface ResultHandler {
 
@@ -12,6 +12,6 @@ public interface ResultHandler {
 	 * @param ctx
 	 * @return 具体任务队列，将按顺序执行
 	 */
-	public List<SpecificTask> process(CrawlerContext ctx) throws Exception;
+	public void process(Task ctx, ResultHelper helper) throws Exception;
 
 }

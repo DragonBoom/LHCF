@@ -1,4 +1,4 @@
-package indi.crawler.task;
+package indi.crawler.task.def;
 
 public enum TaskType {
     /** 主题爬虫*/

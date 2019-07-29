@@ -4,8 +4,8 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import indi.crawler.nest.CrawlerContext;
 import indi.crawler.task.Task;
+import indi.crawler.task.def.TaskDef;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -14,11 +14,11 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class SpecificTaskBlockingWaitProcessor extends HttpProcessor {
-	private final Task task;
+	private final TaskDef task;
 	private final long waitMillis;
 	private volatile long lastOpen;
 	private Lock lock;
-	private LinkedBlockingQueue<CrawlerContext> todoQueue;
+	private LinkedBlockingQueue<Task> todoQueue;
 
 	private void init() {
 		lock = new ReentrantLock();
@@ -31,7 +31,7 @@ public class SpecificTaskBlockingWaitProcessor extends HttpProcessor {
 	 * @param task
 	 * @param waitMillis 每个间隔等待的时间
 	 */
-    public SpecificTaskBlockingWaitProcessor(Task task, Long waitMillis) {
+    public SpecificTaskBlockingWaitProcessor(TaskDef task, Long waitMillis) {
         this.task = task;
         this.waitMillis = waitMillis;
         init();

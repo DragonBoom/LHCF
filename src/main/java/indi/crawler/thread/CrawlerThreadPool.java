@@ -1,7 +1,9 @@
-package indi.crawler.nest;
+package indi.crawler.thread;
 
 import java.util.LinkedList;
 
+import indi.crawler.task.CrawlerController;
+import indi.exception.WrapperException;
 import indi.util.Message;
 import lombok.extern.slf4j.Slf4j;
 
@@ -131,7 +133,7 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
                     Thread.sleep(DEFAULT_SCAN_WAITING);
                     fullPool();
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    throw new WrapperException(e);
                 }
             }
         }

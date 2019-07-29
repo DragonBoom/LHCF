@@ -1,329 +1,154 @@
 package indi.crawler.task;
 
+import java.io.Serializable;
+import java.net.URI;
+import java.util.Comparator;
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
+import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
-import org.apache.http.Header;
+import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.message.BasicHeader;
-import org.apache.http.message.HeaderGroup;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.impl.client.CloseableHttpClient;
 
-import indi.crawler.bootstrap.CrawlerJob;
-import indi.crawler.cookies.CookieStore;
-import indi.crawler.exception.ExceptionHandler;
-import indi.crawler.exception.LogExceptionHandler;
-import indi.crawler.nest.ResponseEntity.TYPE;
-import indi.crawler.processor.Processor;
-import indi.crawler.processor.http.CookieProcessor;
-import indi.crawler.processor.http.LogProcessor;
-import indi.crawler.processor.http.RedisCacheProcessor;
-import indi.crawler.processor.http.SpecificTaskBlockingWaitProcessor;
-import indi.crawler.result.ResultHandler;
+import indi.crawler.task.def.TaskDef;
+import indi.crawler.thread.CrawlerThread;
+import indi.util.BeanUtils;
+import indi.util.Cleanupable;
+import indi.util.Log;
+import indi.util.Message;
+import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
+import lombok.extern.slf4j.Slf4j;
 
 /**
- * 该类描述某一“类”独立的爬虫任务
+ * 描述一个爬虫任务
  * 
  * @author DragonBoom
  *
  */
 @Getter
-//@Setter
+@Setter
 @ToString
-public class Task implements Comparable<Task> {
-    private static final int DEFAULT_REQUEST_TIMEOUT = 4000;
-    private static final int DEFAULT_TIMEOUT = 4000;
-    private ResultHandler resultHandler;
+@Slf4j
+@NoArgsConstructor(access = AccessLevel.PACKAGE)
+public class Task implements Cleanupable, Comparable<Task>, Message, Log, Serializable {
+    private static final long serialVersionUID = 1L;
 
-    public enum HTTPMethodType {
-        GET, POST, PUT, PATCH, DELETE;
-    }
-
-    private HTTPMethodType method = HTTPMethodType.GET;
-    // 用于辨识Task身份
-    private String name;
     /**
-     * HTTP请求头部，线程安全？！
+     * Context绑定的爬虫的任务
      */
-    private HeaderGroup requestHeaders;
-    private Lock headersLock;
-    private RequestConfig.Builder requestConfigBuilder;
-    // Specific HTTP HOST
-    private HttpHost host;
+    private transient TaskDef taskDef;
     /**
-     * 默认最大重试次数
-     * 
+     * 反序列化时通过这个属性找到TaskDef
      */
-    private int defaultMaxRetries = 10; // 默认尝试10次
+    private String taskDefName;
+    
+    private String requestEntityStr;
+    
+    
+    private transient CrawlerController controller;
+
+    private URI uri;
+    private transient CloseableHttpClient client;
+    private CrawlerStatus status = CrawlerStatus.CREATED;
+    private transient CrawlerThread thread;
     /**
-     * 默认重试超过限制次数后等待的时间
-     * 
+     * 当前爬虫在爬虫池中的优先级，数值越小，优先级越大
      */
-    private long defaultRetriesDeferrals = 10000L; // 尝试时每次等待十秒
+    private int priority = 0;
     /**
-     * 历史执行任务数
+     * 爬虫尝试完成任务的次数
      */
-    private AtomicLong totalCounts = new AtomicLong();
-    private List<Processor> customProcessors;// 配置的拦截器
-    @Setter
-    private List<Processor> crawlerProcessors;// 真正的拦截器
-    private List<ExceptionHandler> crawlerExceptionHandler;
-
-    private TaskType type = TaskType.HTTP_TOPICAL;
-    private TYPE resultType = TYPE.String;
-    @Setter
-    private int priority = 0;// 优先级 数值越小优先级越高
-    private boolean keepReceiveCookie = false;
-    @Setter
-    private CookieStore cookieStore;
-    @Setter
-    private HttpHost proxy;
-
-    @Getter
-    private boolean needCheckRocord;// 检查记录，
-
-    private void init() {
-        headersLock = new ReentrantLock();
-        requestHeaders = new HeaderGroup();
-        // init HTTP headers
-        requestHeaders.addHeader(new BasicHeader("accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8"));
-        requestHeaders.addHeader(new BasicHeader("accept-encoding", "gzip, deflate"));// error when add br ? TODO
-        requestHeaders.addHeader(new BasicHeader("accept-language", "zh-CN,zh;q=0.9"));
-        requestHeaders.addHeader(new BasicHeader("cache-control", "max-age=0"));
-        requestHeaders.addHeader(new BasicHeader("Connection", "keep-alive"));
-        requestHeaders.addHeader(new BasicHeader("upgrade-insecure-requests", "1"));
-        requestHeaders.addHeader(new BasicHeader("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/67.0.3396.87 Safari/537.36"));
-    }
-
-    private Task(String name) {
-        this.name = name;
-        init();
-    }
-
-    public void addTotalCounts() {
-        totalCounts.incrementAndGet();
-    }
-
-    public TaskType getType() {
-        return type;
-    }
-
-    public HTTPMethodType getMethod() {
-        return method;
-    }
-
-    public Header[] getRequestHeaders() {
-        headersLock.lock();
-        Header[] headers = null;
-        try {
-            headers = requestHeaders.getAllHeaders();
-        } finally {
-            headersLock.unlock();
-        }
-        return headers;
-    }
-
-    public boolean removeHeader(String key) {
-        boolean result = false;
-        headersLock.lock();
-        try {
-            for (Header h : requestHeaders.getHeaders(key)) {
-                requestHeaders.removeHeader(h);
-                result = true;
-            }
-        } finally {
-            headersLock.unlock();
-        }
-        return result;
-    }
-
-    public void addHeader(String key, String value) {
-        headersLock.lock();
-        try {
-            requestHeaders.addHeader(new BasicHeader(key, value));
-        } finally {
-            headersLock.unlock();
-        }
-    }
-
-    /*
-     *  实现优先级越高，在有序列表中的排序越靠前(non-Javadoc)
-     * 对Java中的有序列表，compareTo的值越低越靠前 
-     *  
-     * @see java.lang.Comparable#compareTo(java.lang.Object)
+    private int attempts = 0;
+    /**
+     * 爬虫执行任务时发生的异常，懒加载
      */
+    private List<Throwable> throwables;
+    // 最大重试次数
+    private int maxRetries;
+    // 重试超过次数限制后需要等待的时间，单位秒
+    private long retryDeferrals;
+    // 唤醒时间
+    private long wakeUpTime;
+    // 注册时间
+    private long registration;
+    private long deadLine;
+    /**
+     * 存储自定义变量，可用于在处理器间传递变量，采取懒加载
+     */
+    private Map<String, Object> data;
+    // HTTP请求部分
+    private transient HttpRequestBase request;
+    private transient HttpEntity requestEntity;
+    // HTTP proxy
+    private transient HttpHost host;
+    // HTTP响应部分
+    private transient HttpResponse response;
+    // HTTP响应实体，懒加载
+    private transient ResponseEntity responseEntity = null;
+    // 由本Context产生的子任务
+    private transient List<Task> childs;    
+
+    @Override
+    public void cleanup() {
+        BeanUtils.cleanup(this);
+    }
+    
+    public void addThrowables(Throwable throwable) {
+        throwables = Optional.ofNullable(throwables).orElse(new LinkedList<Throwable>());
+        throwables.add(throwable);
+    }
+
     @Override
     public int compareTo(Task o) {
-        return o.getPriority() - this.getPriority();
+        return o.getPriority() - this.priority; // TreeMap 取值时优先取小值！！
+    }
+
+    public static class DeferralContextComparator implements Comparator<Task> {
+
+        @Override
+        public int compare(Task o1, Task o2) {
+            if (o1.wakeUpTime != o2.wakeUpTime) {
+                return (int) (o1.wakeUpTime - o2.wakeUpTime); // 是否可能越界？
+            } else {
+                return o2.priority - o1.priority;
+            }
+        }
     }
 
     @Override
-    public boolean equals(Object o) {
-        if (o instanceof Task) {
-            Task tmp = (Task) o;
-            if (this.getName().equals(tmp.getName())) {
-                return true;
-            }
-        }
-        return false;
+    public void log() {
+        log.info("-------------------------------------------------");
+        Task ctx = this;
+        log.info("status: {}, taskName: {}, uri: {}, exceptions: {}, attemptCounts: {}, wakeUpTime: {}",
+                ctx.getStatus(), ctx.getTaskDef().getName(), ctx.getUri(), ctx.getThrowables(),
+                ctx.getAttempts(), new Date(ctx.getWakeUpTime()));
+        log.info("response: {}", ctx.getResponse());
+//        log.info("responseEntity: {}", ctx.getResponseEntity().getContent());
+        
+        CrawlerThread thread = ctx.getThread();
+        log.info("关于该任务: {}", thread.getMessage());
+        log.info("爬虫线程: {}", thread);
+        log.info("爬虫任务是否仍在执行? {}",
+                thread.getCurrentContext() != null && thread.getCurrentContext().equals(ctx) ? "是" : "否");
+        log.info("-------------------------------------------------");
     }
 
-    public static class Builder {
-        private Task task;
-        private int requestTimeout = DEFAULT_REQUEST_TIMEOUT;
-        private int timeout = DEFAULT_TIMEOUT;
-        private CrawlerJob job;
-
-        private Builder(String taskName, CrawlerJob job) {
-            this.task = new Task(taskName);
-            this.job = job;;
-        }
-
-        public static Builder begin(String taskName) {
-            return new Builder(taskName, null);
-        }
-        
-        public static Builder begin(String taskName, CrawlerJob job) {
-            return new Builder(taskName, job);
-        }
-
-        public Builder withPriority(int priority) {
-            task.priority = priority;
-            return this;
-        }
-
-        public Builder withType(TaskType type) {
-            task.type = type;
-            return this;
-        }
-
-        public Builder withMethod(String method) {
-            task.method = Optional.ofNullable(HTTPMethodType.valueOf(method)).orElseGet(() -> {
-                throw new RuntimeException("Not Support This Method: " + method);
-            });
-            return this;
-        }
-
-        public Builder withResultType(TYPE type) {
-            task.resultType = type;
-            return this;
-        }
-
-        public Builder withResultHandler(ResultHandler h) {
-            task.resultHandler = h;
-            return this;
-        }
-
-        private void createIfNotExist() {
-            Task task = this.task;
-            task.customProcessors = Optional.ofNullable(task.customProcessors).orElse(new LinkedList<>());
-            task.crawlerExceptionHandler = Optional.ofNullable(task.crawlerExceptionHandler).orElse(new LinkedList<>());
-        }
-
-        public Builder withRequestHeaders(Header header) {
-            task.requestHeaders.addHeader(header);
-            return this;
-        }
-
-        public Builder withCrawlerInterceptor(Processor handler) {
-            createIfNotExist();
-            task.customProcessors.add(handler);
-            return this;
-        }
-
-        public Builder withLogDetail() {
-            createIfNotExist();
-            task.customProcessors.add(new LogProcessor());
-            task.crawlerExceptionHandler.add(new LogExceptionHandler());
-            return this;
-        }
-
-        /**
-         * 该方法暂时存在问题。。。
-         */
-        public Builder withBlockingWait(long millis) {
-            createIfNotExist();
-            task.customProcessors.add(new SpecificTaskBlockingWaitProcessor(task, millis));
-            return this;
-        }
-        
-        /**
-         * @param redisURI "redis://password@localhost:6379/0"
-         * @return
-         */
-        public Builder withRedisCache(String redisURI) {
-            createIfNotExist();
-            task.customProcessors.add(new RedisCacheProcessor(redisURI));
-            return this;
-        }
-
-        public Builder withHTTPProxy(String hostname, int port) {
-            task.proxy = new HttpHost(hostname, port);
-            return this;
-        }
-
-        public Builder withDefaultMaxRetires(int times, long deferrals) {
-            task.defaultMaxRetries = times;
-            task.defaultRetriesDeferrals = deferrals;
-            return this;
-        }
-
-        /**
-         * 设置从连接池获取连接的时限
-         */
-        public Builder withRequestTimeout(int timeout) {
-            requestTimeout = timeout;
-            return this;
-        }
-
-        /**
-         * 设置连接的时限
-         */
-        public Builder withTimeout(int timeout) {
-            this.timeout = timeout;
-            return this;
-        }
-
-        public Builder withKeepReceiveCookie() {
-            task.keepReceiveCookie = true;
-            withCrawlerInterceptor(new CookieProcessor());// 增加拦截器
-            return this;
-        }
-
-        public Builder withCheckRecord() {
-            task.needCheckRocord = true;
-            return this;
-        }
-
-        private void buildDefaultIfNeed() {
-            task.requestConfigBuilder = RequestConfig.custom()
-                    .setProxy(task.proxy)
-                    .setConnectionRequestTimeout(requestTimeout)
-                    .setConnectTimeout(timeout);
-        }
-
-        public Task build() {
-            createIfNotExist();
-            buildDefaultIfNeed();
-            return task;
-        }
-        
-        public CrawlerJob and() {
-            Objects.requireNonNull(job);
-            job.register(build());
-            return job;
-        }
-        
+    @Override
+    public String getMessage() {
+        return new StringBuilder(uri.toString())
+                .append(", taskName:").append(getTaskDef().getName())
+                .append(", status:").append(getStatus())
+                .append(", exceptions:").append(getThrowables())
+                .append(", attemptCounts:").append(getAttempts())
+                .toString();
     }
-
 }

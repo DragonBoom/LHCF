@@ -1,4 +1,4 @@
-package indi.crawler.nest;
+package indi.crawler.task;
 
 /**
  * 爬虫状态

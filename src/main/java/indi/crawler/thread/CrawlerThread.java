@@ -1,5 +1,7 @@
-package indi.crawler.nest;
+package indi.crawler.thread;
 
+import indi.crawler.task.CrawlerController;
+import indi.crawler.task.Task;
 import indi.util.Message;
 
 /**
@@ -11,7 +13,7 @@ import indi.util.Message;
 public class CrawlerThread extends Thread implements Message {
     private CrawlerController controller;
     private volatile boolean retire;
-    private CrawlerContext currentContext;
+    private Task currentContext;
     private int workNumber;
 
     private void init(CrawlerThreadPool pool) {
@@ -28,7 +30,7 @@ public class CrawlerThread extends Thread implements Message {
         while (!retire) {
             try {
                 // 领取爬虫任务
-                CrawlerContext ctx = null;
+                Task ctx = null;
                 ctx = controller.poll();
                 // 若没有领取到任务，开始休息
                 if (ctx == null) {
@@ -51,7 +53,7 @@ public class CrawlerThread extends Thread implements Message {
         retire = true;
     }
 
-    public CrawlerContext getCurrentContext() {
+    public Task getCurrentContext() {
         return currentContext;
     }
 

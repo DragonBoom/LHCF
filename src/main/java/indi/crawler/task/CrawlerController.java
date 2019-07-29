@@ -1,10 +1,11 @@
-package indi.crawler.nest;
+package indi.crawler.task;
 
 import java.util.concurrent.TimeUnit;
 
 import indi.crawler.bootstrap.CrawlerJob;
 import indi.crawler.monitor.JVMMonitor;
 import indi.crawler.processor.ProcessorChain;
+import indi.crawler.thread.CrawlerThreadPool;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -19,7 +20,7 @@ public class CrawlerController {
     public final static Long DEFAULT_TIME_TO_LIVE = 64L;
     public final static TimeUnit DEFAULT_TIME_TO_LIVE_UNIT = TimeUnit.SECONDS;
     @Getter
-    private ContextPool contextPool;
+    private TaskPool taskPool;
     @Getter
     @Setter
     private CrawlerThreadPool threadPool;
@@ -29,18 +30,19 @@ public class CrawlerController {
     private ProcessorChain chain;
     @Getter
     @Setter
-    private CrawlerContextFactory contextFactory;
+    private TaskFactory taskFactory;
 
     /**
      * 初始化
      */
     private void init() {
-        contextPool = new ContextPool();
+//        taskPool = new BlockingQueueTaskPool();
+        taskPool = new RedisMQCrawlerTaskPool("redis://@localhost:1081/0", this);
         threadPool = new CrawlerThreadPool(this);
 
-        chain = new ProcessorChain();
+        chain = new ProcessorChain(this);
         
-        contextFactory = new CrawlerContextFactory(this);
+        taskFactory = new TaskFactory(this);
         
         new JVMMonitor(this);
     }
@@ -50,22 +52,22 @@ public class CrawlerController {
         init();
     }
 
-    public ContextPool getPool() {
-        return contextPool;
+    public TaskPool getPool() {
+        return taskPool;
     }
 
     /**
      *  开始执行爬虫任务
      */
-    public void process(CrawlerContext ctx) {
+    public void process(Task ctx) {
         chain.process(ctx);
     }
     
-    public boolean offer(CrawlerContext ctx) {
-        return contextPool.offer(ctx);
+    public boolean offer(Task ctx) {
+        return taskPool.offer(ctx);
     }
     
-    public CrawlerContext poll() {
-        return contextPool.poll();
+    public Task poll() {
+        return taskPool.poll();
     }
 }

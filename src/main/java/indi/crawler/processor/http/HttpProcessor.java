@@ -19,7 +19,6 @@ public abstract class HttpProcessor extends Processor {
     }
 
     /**
-     * 实现该方法以于
      * 
      * @param pCtx
      * @return

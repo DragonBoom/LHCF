@@ -1,7 +1,7 @@
 package indi.crawler.monitor;
 
 import indi.crawler.bootstrap.CrawlerJob;
-import indi.crawler.nest.ContextPool;
+import indi.crawler.task.TaskPool;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -33,14 +33,14 @@ public class ContextPoolMonitor {
 
 		@Override
 		public void run() {
-			ContextPool pool = job.getController().getContextPool();
+		    TaskPool pool = job.getController().getTaskPool();
 			while (true) {// TODO ? retire?
 				try {
 					Thread.sleep(millis);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
-				log.info(pool.getMessage());
+				log.info(new StringBuilder("## Context Pool Monitor: ").append(pool.getMessage()).toString());
 			}
 		}
 	}

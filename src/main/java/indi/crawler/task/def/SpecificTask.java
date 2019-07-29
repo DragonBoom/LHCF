@@ -1,12 +1,12 @@
-package indi.crawler.task;
+package indi.crawler.task.def;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.Objects;
 import java.util.Optional;
 
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerController;
+import indi.crawler.task.CrawlerController;
+import indi.crawler.task.Task;
 import indi.util.Cleanupable;
 
 /**
@@ -46,10 +46,10 @@ public class SpecificTask implements Cleanupable {
 		entity = null;
 	}
 
-	public CrawlerContext toCrawlerContext(CrawlerController controller) {
-		Task task = controller.getJob().getTask(taskName);
+	public Task toCrawlerContext(CrawlerController controller) {
+		TaskDef task = controller.getJob().getTaskDef(taskName);
 		Objects.requireNonNull(task);
-		return controller.getContextFactory().createContext(task, uri, entity);
+		return controller.getTaskFactory().build(task, uri, entity);
 	}
 
 }

@@ -14,10 +14,10 @@ import org.apache.http.client.ClientProtocolException;
 
 import com.google.common.collect.ImmutableMap;
 
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerStatus;
 import indi.crawler.processor.ProcessorContext;
+import indi.crawler.task.CrawlerStatus;
 import indi.crawler.task.Task;
+import indi.crawler.task.def.TaskDef;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -31,16 +31,16 @@ public class BasicExceptionHandler implements ExceptionHandler {
     /** 5s */
     private static final long DEFAULT_ADDITIONAL_WAIT_MAX_MILLIS = 5000;
     
-    private ImmutableMap<Class<? extends Throwable>, BiFunction<CrawlerContext, Throwable, HandleResult>> handlers; 
+    private ImmutableMap<Class<? extends Throwable>, BiFunction<Task, Throwable, HandleResult>> handlers; 
     
-    private static final BiFunction<CrawlerContext, Throwable, HandleResult> RECOVER_HANDLER = (ctx, e) -> HandleResult.RECOVER;
+    private static final BiFunction<Task, Throwable, HandleResult> RECOVER_HANDLER = (ctx, e) -> HandleResult.RECOVER;
     
     protected void init() {
         // list -> 1
         // build Fun
         // build exception -> handler map
         handlers = ImmutableMap
-                .<Class<? extends Throwable>, BiFunction<CrawlerContext, Throwable, HandleResult>>builder()
+                .<Class<? extends Throwable>, BiFunction<Task, Throwable, HandleResult>>builder()
                 .put(ConnectionClosedException.class, RECOVER_HANDLER)
                 .put(SSLHandshakeException.class, RECOVER_HANDLER)
                 .put(SSLException.class, RECOVER_HANDLER)
@@ -68,13 +68,14 @@ public class BasicExceptionHandler implements ExceptionHandler {
 
     @Override
     public void handleException(ProcessorContext hCtx, Throwable throwable) {
-        CrawlerContext ctx = hCtx.getCrawlerContext();
+        log.warn("处理异常 {}", throwable.getMessage());
+        Task ctx = hCtx.getCrawlerContext();
         ctx.setStatus(CrawlerStatus.PENDING);
         ctx.addThrowables(throwable);
         
-        Task task = ctx.getTask();
+        TaskDef task = ctx.getTaskDef();
 
-        BiFunction<CrawlerContext, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
+        BiFunction<Task, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
             log.error("该异常目前尚无法处理，将尝试再次处理-{} {} \n {}", task.getName(), e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
             e.printStackTrace();
@@ -88,7 +89,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
             int attempts = ctx.getAttempts();
             attempts++;
             // 计算额外等待时间
-            long totalCounts = ctx.getTask().getTotalCounts().get();
+            long totalCounts = ctx.getTaskDef().getTotalCounts().get();
             
             if (attempts <= ctx.getMaxRetries()) {
                 // 若没有超过最大重试次数，则将任务放到延时队列中
@@ -99,7 +100,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
                         * DEFAULT_ADDITIONAL_WAIT_MAX_MILLIS;// 额外等待时间:根据任务重试次数计算，尝试越多次，等待越久
                 ctx.setWakeUpTime(System.currentTimeMillis() + ctx.getRetryDeferrals()
                         + additionalWaitMillis);
-                ctx.setPriority(ctx.getTask().getPriority() + ctx.getPriority());
+                ctx.setPriority(ctx.getTaskDef().getPriority() + ctx.getPriority());
                 ctx.getController().offer(ctx);
                 return;
             } else {

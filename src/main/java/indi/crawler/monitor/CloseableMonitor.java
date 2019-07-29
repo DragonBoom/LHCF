@@ -31,7 +31,7 @@ public class CloseableMonitor {
     }
 
     public class CloseableMonitorThread extends Thread {
-        private long SLEEP_MILLIS = 5000L;
+        private long SLEEP_MILLIS = 50000L;
         private Date begin;
 
         public CloseableMonitorThread() {
@@ -55,7 +55,7 @@ public class CloseableMonitor {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if (job.getController().getContextPool().isEmpty()) {
+                if (job.getController().getTaskPool().isEmpty()) {
                     Date now = new Date();
                     long millis = now.getTime() - begin.getTime();
                     log.info(

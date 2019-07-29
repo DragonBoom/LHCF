@@ -3,10 +3,10 @@ package indi.crawler.monitor;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
-import indi.crawler.nest.ContextPool;
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerController;
-import indi.crawler.nest.CrawlerStatus;
+import indi.crawler.task.CrawlerController;
+import indi.crawler.task.CrawlerStatus;
+import indi.crawler.task.Task;
+import indi.crawler.task.TaskPool;
 import indi.exception.WrapperException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -63,7 +63,7 @@ public class JVMMonitor {
                     throw new WrapperException(e);
                 }
                 // 通过外部类获取上下文池
-                ContextPool pool = crawlerController.getContextPool();
+                TaskPool pool = crawlerController.getTaskPool();
                 // 如果出租的上下文没有超过最低门槛，则多等待一个回合
                 int leasedSize = pool.getLeasedSize();
                 if (leasedSize < sizeThreshold) {
@@ -75,10 +75,9 @@ public class JVMMonitor {
                 }
                 // 开始处理出租的上下文
                 // 获取出租上下文集合的副本
-                Object[] leaseds = pool.cloneLeased();
+                Task[] leaseds = pool.cloneLeased();
                 int cleanSize = 0;
-                for (Object obj : leaseds) {
-                    CrawlerContext ctx = (CrawlerContext) obj;
+                for (Task ctx : leaseds) {
                     // 清空所有处于终端状态，无法继续执行的爬虫上下文
                     CrawlerStatus status = ctx.getStatus();
                     Objects.requireNonNull(status);
@@ -89,7 +88,7 @@ public class JVMMonitor {
                             log.info("爬虫任务已被中止，将进行回收 {}", ctx);
                             break;
                         case FINISHED:
-                            log.debug("爬虫任务已结束，将进行回收 {}", ctx);
+                            log.debug("爬虫任务已结束，但未主动回收。将由监视器进行回收 {}", ctx);
                             break;
                         case INTERRUPTED:
                             log.warn("爬虫任务无法处理，将进行回收 {}", ctx);

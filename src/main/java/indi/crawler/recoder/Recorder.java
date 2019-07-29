@@ -1,6 +1,6 @@
 package indi.crawler.recoder;
 
-import indi.crawler.nest.CrawlerContext;
+import indi.crawler.task.Task;
 
 /**
  * 用于记录爬取历史，根据任务类型进行分类
@@ -17,15 +17,15 @@ public interface Recorder {
      * @param ctx
      * @return
      */
-	boolean chechAndRecord(CrawlerContext ctx);
+	boolean chechAndRecord(Task ctx);
 
 	/**
 	 * 
 	 * @param ctx
 	 * @return 若有记录，则返回true
 	 */
-	boolean checkRecord(CrawlerContext ctx);
+	boolean checkRecord(Task ctx);
 	
-	boolean removeRecord(CrawlerContext ctx);
+	boolean removeRecord(Task ctx);
 	
 }

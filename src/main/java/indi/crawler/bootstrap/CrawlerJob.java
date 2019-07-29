@@ -12,10 +12,10 @@ import indi.crawler.cookies.CookieStore;
 import indi.crawler.cookies.MemoryCookieStore;
 import indi.crawler.monitor.CloseableMonitor;
 import indi.crawler.monitor.ContextPoolMonitor;
-import indi.crawler.nest.CrawlerContext;
-import indi.crawler.nest.CrawlerController;
-import indi.crawler.task.SpecificTask;
+import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
+import indi.crawler.task.def.SpecificTask;
+import indi.crawler.task.def.TaskDef;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -26,8 +26,8 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class CrawlerJob {
-    private Map<String, Task> tasks;
-    private CrawlerContext seed;
+    private Map<String, TaskDef> tasks;
+    private Task seed;
     private CrawlerController controller;
     private CookieStore cookieStore;
     private HttpHost proxy;
@@ -49,13 +49,13 @@ public class CrawlerJob {
     
     private List<Integer> priorityCache = new ArrayList<>();
 
-    public synchronized void register(Task task) {
-        String name = task.getName();
+    public synchronized void register(TaskDef taskDef) {
+        String name = taskDef.getName();
         if (tasks.containsKey(name)) {
             System.exit(-1);// warn ! ! !
             throw new RuntimeException("Duplicate task name " + name);
         }
-        int pri = task.getPriority();
+        int pri = taskDef.getPriority();
         // 为了能够让 TreeMap 准确一类一键，必须使每个Task的都有不一样的比较值
         
         while (priorityCache.contains(pri)) {
@@ -65,26 +65,26 @@ public class CrawlerJob {
                 pri++;
             }
         }
-        task.setPriority(pri);
+        taskDef.setPriority(pri);
         priorityCache.add(pri);
         
-        if (task.isKeepReceiveCookie()) {
-            task.setCookieStore(cookieStore);
+        if (taskDef.isKeepReceiveCookie()) {
+            taskDef.setCookieStore(cookieStore);
         }
         
         // set proxy if not exist
-        if (proxy != null && task.getProxy() == null) {
-            task.setProxy(proxy);
-            task.getRequestConfigBuilder().setProxy(proxy);
+        if (proxy != null && taskDef.getProxy() == null) {
+            taskDef.setProxy(proxy);
+            taskDef.getRequestConfigBuilder().setProxy(proxy);
         }
         //
-        log.info("已注册爬虫任务 {}", task.toString());
+        log.info("已注册爬虫任务定义 {}", taskDef.toString());
         
         // final
-        tasks.put(name, task);
+        tasks.put(name, taskDef);
     }
 
-    public synchronized Task getTask(String name) {
+    public synchronized TaskDef getTaskDef(String name) {
         return tasks.get(name);
     }
 
@@ -96,7 +96,7 @@ public class CrawlerJob {
         return cookieStore;
     }
 
-    public CrawlerContext getSeed() {
+    public Task getSeed() {
         return seed;
     }
     private static final Long CONTEXT_POOL_MONITOR_SLEEP_MILLIS = 5000L;
@@ -116,7 +116,7 @@ public class CrawlerJob {
     
     public boolean addSpecificTask(String taskName, String seedUri, String entity) {
         taskName = Optional.ofNullable(taskName).orElse(tasks.entrySet().iterator().next().getKey());
-        CrawlerContext ctx = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
+        Task ctx = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
         return controller.offer(ctx);
     }
     
@@ -156,8 +156,8 @@ public class CrawlerJob {
     /**
      * {@link CrawlerJob#withASCPriorityOrder()}
      */
-    public Task.Builder withTask(String taskName) {
-        return Task.Builder.begin(taskName, this);
+    public TaskDef.Builder withTask(String taskName) {
+        return TaskDef.Builder.begin(taskName, this);
     }
     
 
