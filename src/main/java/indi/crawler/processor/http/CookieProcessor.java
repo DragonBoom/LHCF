@@ -1,6 +1,7 @@
 package indi.crawler.processor.http;
 
 import java.net.URI;
+import java.util.Arrays;
 
 import org.apache.http.Header;
 import org.apache.http.HttpResponse;
@@ -24,7 +25,7 @@ public class CookieProcessor extends HttpProcessor {
         
         if (task.isKeepReceiveCookie()) {
             String cookies = task.getCookieStore().get(uri);
-            if (cookies != null && cookies.length() > 1) {
+            if (cookies != null && cookies.length() > 0) {
                 request.addHeader("Cookie", cookies);
             }
         }

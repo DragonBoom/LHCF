@@ -54,6 +54,8 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
 
     /**
      * 线程不安全，必须在单线程环境下执行！！
+     * 
+     * <p> FIXME: 当线程中止运行时，仍会被threads引用...
      */
     public synchronized void fullPool() {
         int j = 0;
@@ -67,24 +69,6 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         if (j > 0) {
             log.info("已填充爬虫池  [{}/{}]", j, size);
         }
-//        Thread[] threads = new Thread[super.activeCount()];
-//        super.enumerate(threads, true);
-//        int[] ids = new int[size];
-//        int num = 0;
-//        for (Thread t : threads) {
-//            int id = getId(t);
-//            if (id < size) {
-//                ids[id] = 1;// 用1表示该下标对应的线程存在
-//            }
-//        }
-//        for (int i = 0; i < size; i++) {
-//            if (ids[i] != 1) { // 若以该值为id的线程不存在
-//                num++;
-//                addNewThread("Crawler Thread - " + i);
-//            }
-//        }
-//        if (num != 0)
-//            log.info("Create {} Thread", num);
     }
 
     private void killThread(CrawlerThread thread, boolean immediate) {
@@ -95,11 +79,11 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
     }
 
     public void shutdown() {
-        Thread[] snapshots = new Thread[super.activeCount()];
-        int len = super.enumerate(snapshots);
-        for (int i = 0; i < len; i++) {
-            snapshots[i].interrupt();
-            killThread((CrawlerThread) snapshots[i], true);
+        for (Thread thread : threads) {
+            CrawlerThread crawlerThread = (CrawlerThread) thread;
+            crawlerThread.retire();
+            crawlerThread.interrupt();
+            log.info("结束线程{}", crawlerThread);
         }
     }
 
@@ -109,6 +93,20 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
 
     public int getSize() {
         return size;
+    }
+    
+    public int getWorkingCount() {
+        int count = 0;
+        for (Thread thread : threads) {
+            if (((CrawlerThread) thread).isWorking()) {
+                count++;
+            }
+        }
+        return count;
+    }
+    
+    public boolean isOver() {
+        return getWorkingCount() == 0; 
     }
 
     @Override

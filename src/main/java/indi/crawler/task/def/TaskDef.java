@@ -1,6 +1,5 @@
 package indi.crawler.task.def;
 
-import java.io.Serializable;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -8,10 +7,12 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiFunction;
 
 import org.apache.http.Header;
 import org.apache.http.HttpHost;
 import org.apache.http.client.config.RequestConfig;
+import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.message.BasicHeader;
 import org.apache.http.message.HeaderGroup;
 
@@ -92,6 +93,9 @@ public class TaskDef implements Comparable<TaskDef> {
 
     @Getter
     private boolean needCheckRocord;// 检查记录，
+    
+    @Getter
+    private BiFunction<String, HttpRequestBase, String> idKeyGenerator;// <url, result, key>
 
     private void init() {
         headersLock = new ReentrantLock();
@@ -99,7 +103,7 @@ public class TaskDef implements Comparable<TaskDef> {
         // init HTTP headers
         requestHeaders.addHeader(new BasicHeader("accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3"));
-        requestHeaders.addHeader(new BasicHeader("accept-encoding", "gzip, deflate"));// error when `gzip, deflate, br` ? TODO
+        requestHeaders.addHeader(new BasicHeader("accept-encoding", "gzip, deflate"));// error when `gzip, deflate, br` ? TODO Brotli
         requestHeaders.addHeader(new BasicHeader("accept-language", "zh-CN,zh;q=0.9"));
         requestHeaders.addHeader(new BasicHeader("cache-control", "no-cache"));
         requestHeaders.addHeader(new BasicHeader("pragma", "no-cache"));
@@ -308,6 +312,11 @@ public class TaskDef implements Comparable<TaskDef> {
             task.needCheckRocord = true;
             return this;
         }
+        
+        public Builder withKeyGenerator(BiFunction<String, HttpRequestBase, String> idKeyGenerator) {
+            task.idKeyGenerator = idKeyGenerator;
+            return this;
+        }
 
         private void buildDefaultIfNeed() {
             task.requestConfigBuilder = RequestConfig.custom()
@@ -315,7 +324,7 @@ public class TaskDef implements Comparable<TaskDef> {
                     .setConnectionRequestTimeout(requestTimeout)
                     .setConnectTimeout(timeout);
         }
-
+        
         public TaskDef build() {
             createIfNotExist();
             buildDefaultIfNeed();

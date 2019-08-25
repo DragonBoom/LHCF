@@ -106,7 +106,7 @@ public class HTTPConnectionProcessor extends HttpProcessor {
         HttpResultHelper resultHelper = new HttpResultHelper(controller.getTaskFactory());
         
         handler.process(ctx, resultHelper);
-        List<Task> newTasks = resultHelper.getNewTask();
+        List<Task> newTasks = resultHelper.getNewTasks();
         ctx.setChilds(newTasks);
         return ProcessorResult.CONTINUE_STAGE;
     }

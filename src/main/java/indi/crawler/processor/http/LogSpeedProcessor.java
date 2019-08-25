@@ -32,8 +32,7 @@ public class LogSpeedProcessor extends HttpProcessor {
                 throw new IllegalArgumentException();
             }
         });
-        Map<String, String> toLogAtEndMap = CloseableMonitor.getToLogAtEndMap();
-        toLogAtEndMap.put("LogSpeed", new StringBuilder()
+        CloseableMonitor.addLogAtEnd("LogSpeed", new StringBuilder()
                 .append("共下载 ").append(downloadByteCount.get() / 1024 / 1024).append(" mb")
                 .toString());
         return ProcessorResult.KEEP_GOING;

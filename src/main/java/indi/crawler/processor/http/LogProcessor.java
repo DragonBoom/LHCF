@@ -8,6 +8,12 @@ import indi.crawler.task.Task;
 import indi.crawler.task.def.TaskType;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 详细日志处理器
+ * 
+ * @author DragonBoom
+ *
+ */
 @Slf4j
 public class LogProcessor extends HttpProcessor {
 

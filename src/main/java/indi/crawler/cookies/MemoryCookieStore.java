@@ -2,6 +2,7 @@ package indi.crawler.cookies;
 
 import java.net.HttpCookie;
 import java.util.Collection;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
@@ -16,7 +17,7 @@ public class MemoryCookieStore extends BasicCookieStore {
 //    private ListMultimap<String, HttpCookie> store;
     
     /**
-     * Table<Domain, CookieKey, HttpCookie>
+     * Table<\Domain, CookieKey, HttpCookie>。
      * 
      * 用Table而不是Multimap是为了解决cookieKey重复的问题
      */
@@ -24,15 +25,13 @@ public class MemoryCookieStore extends BasicCookieStore {
     private HashMultimap<String, HttpCookie> multimap;// for get
     
     private Lock lock;
-    // -1 idle, 0 getting, 1 adding
-    private AtomicInteger status;
+    /** 0 idle, > 0 adding( = adding count), -1 getting */
     
 
     private void init() {
-        store = HashBasedTable.create();// not thread safe
+        store = HashBasedTable.create();// not thread safe...
         multimap = HashMultimap.create();// not thread safe
         lock = new ReentrantLock();
-        status = new AtomicInteger();
     }
 
     public MemoryCookieStore() {
@@ -42,16 +41,13 @@ public class MemoryCookieStore extends BasicCookieStore {
     @Override
     public Collection<HttpCookie> get0(String domain) {
         // TODO Optimise 没必要每次都创建新的LinkedList对象
-        boolean canGet = false;// be true when status = -1 / status = 0
-        while (!canGet) {
-            if (!(canGet = status.compareAndSet(-1, 0))) {
-                canGet = status.compareAndSet(0, 0);
-            }
-        }
-        
-        return multimap.get(domain);
+        Set<HttpCookie> cookies = multimap.get(domain);
+        return cookies;
     }
 
+    /**
+     * 简单用synchronized处理并发问题
+     */
     @Override
     public synchronized void add0(HttpCookie cookie) {
         String domain = cookie.getDomain();
@@ -61,20 +57,17 @@ public class MemoryCookieStore extends BasicCookieStore {
         if (cookie.equals(oldCookie)) {
             return;
         }
-        while (status.compareAndSet(-1, 1)) {
-            // update multimap
-            if (oldCookie == null) {
-                // 此次添加cookie为 新增 操作
-                // 直接添加到multimap中
-                multimap.put(domain, cookie);
-            } else {
-                // 此次添加cookie为 更新 操作
-                // 移除旧cookie，添加新cookie
-                multimap.remove(domain, oldCookie);
-                multimap.put(domain, cookie);
-            }
-            status.decrementAndGet();// 1 -> -1
+
+        // update multimap
+        if (oldCookie == null) {
+            // 此次添加cookie为 新增 操作
+            // 直接添加到multimap中
+        } else {
+            // 此次添加cookie为 更新 操作
+            // 移除旧cookie，添加新cookie
+            multimap.remove(domain, oldCookie);
         }
+        multimap.put(domain, cookie);
     }
 
     @Override

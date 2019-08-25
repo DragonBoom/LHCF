@@ -2,6 +2,7 @@ package indi.crawler.task;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.util.Optional;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.client.config.RequestConfig;
@@ -43,12 +44,12 @@ public class TaskFactory {
     }
 
     public Task build(TaskDef taskDef, final URI uri, String requestEntityStr) {
-        Task ctx = new Task();
-        ctx.setTaskDefName(taskDef.getName());
-        ctx.setRequestEntityStr(requestEntityStr);
-        ctx.setController(controller);
+        Task task = new Task();
+        task.setTaskDefName(taskDef.getName());
+        task.setRequestEntityStr(requestEntityStr);
+        task.setController(controller);
         // 从Task中复制属性
-        BeanUtils.copySelectedProperties(taskDef, ctx)
+        BeanUtils.copySelectedProperties(taskDef, task)
                 .copy("host")
                 .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
                 .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）
@@ -100,12 +101,17 @@ public class TaskFactory {
             request.setConfig(config);
         }
 
-        ctx.setRequest(request);
-        ctx.setRequestEntity(requestEntity);
+        task.setRequest(request);
+        task.setRequestEntity(requestEntity);
         // 设置其他属性
-        ctx.setUri(uri);
-        ctx.setTaskDef(taskDef);
-        ctx.setResponseEntity(new ResponseEntity(ctx, taskDef.getResultType()));
-        return ctx;
+        task.setUri(uri);
+        task.setTaskDef(taskDef);
+        task.setResponseEntity(new ResponseEntity(task, taskDef.getResultType()));
+        
+        // gen and set id key
+        Optional.ofNullable(taskDef.getIdKeyGenerator())
+                .map(fun -> fun.apply(task.getUri().toString(), task.getRequest()))
+                .ifPresent(idKey -> task.setIdentityKey(idKey));
+        return task;
     }
 }

@@ -33,7 +33,7 @@ public class HttpResultHelper implements ResultHelper {
     }
 
     @Override
-    public List<Task> getNewTask() {
+    public List<Task> getNewTasks() {
         return newTasks;
     }
 

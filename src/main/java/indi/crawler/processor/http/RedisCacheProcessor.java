@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -21,6 +22,7 @@ import indi.crawler.processor.ProcessorResult;
 import indi.crawler.task.CrawlerStatus;
 import indi.crawler.task.ResponseEntity;
 import indi.crawler.task.Task;
+import indi.crawler.util.RedisUtils;
 import indi.data.Pair;
 import indi.data.StringObjectRedisCodec;
 import indi.exception.WrapperException;
@@ -37,11 +39,12 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class RedisCacheProcessor extends CacheProcessor {
-    protected RedisClient client;
-    protected RedisCommands<String, Object> commands;
+    protected String redisURI;
+//    protected RedisClient client;
+//    protected RedisCommands<String, Object> commands;
     
     /**用该锁确保只有一个线程在调同一个Redis API，确保不会有线程因一直阻塞而超时报错*/
-    private Lock redisLock;// must static!!
+//    private Lock redisLock;// must static!!
     
     private static final Map<String, Lock> URI_LOCK_MAP = new HashMap<>();
     
@@ -50,25 +53,27 @@ public class RedisCacheProcessor extends CacheProcessor {
     protected static final String HKEY = "LHCF-REQUEST";
 
     protected void init(String redisURI) {
-        // 初始化redisLock，确保使用同一个Redis的对象共用同一个锁
-        STATIC_LOCK.lock();
-        try {
-            redisLock = URI_LOCK_MAP.get(redisURI);
-            if (redisLock == null) {
-                redisLock = new ReentrantLock(true);// fair lock
-                URI_LOCK_MAP.put(redisURI, redisLock);
-            }
-        } finally {
-            STATIC_LOCK.unlock();
-        }
-        
-        client = RedisClient.create(redisURI);
-        client.setDefaultTimeout(Duration.ofMinutes(2));// TODO: sure?z
-        StatefulRedisConnection<String, Object> connect = client.connect(new StringObjectRedisCodec());
-        commands = connect.sync();
+        this.redisURI = redisURI;
+//        // 初始化redisLock，确保使用同一个Redis的对象共用同一个锁
+//        STATIC_LOCK.lock();
+//        try {
+//            redisLock = URI_LOCK_MAP.get(redisURI);
+//            if (redisLock == null) {
+//                redisLock = new ReentrantLock(true);// fair lock
+//                URI_LOCK_MAP.put(redisURI, redisLock);
+//            }
+//        } finally {
+//            STATIC_LOCK.unlock();
+//        }
+//        
+//        client = RedisClient.create(redisURI);
+//        client.setDefaultTimeout(Duration.ofMinutes(2));// TODO: sure?z
+//        StatefulRedisConnection<String, Object> connect = client.connect(new StringObjectRedisCodec());
+//        commands = connect.sync();
     }
 
     public RedisCacheProcessor(String redisURI) {
+        
         init(redisURI);
     }
 
@@ -78,7 +83,7 @@ public class RedisCacheProcessor extends CacheProcessor {
     @Override
     public ProcessorResult executeRequestByCache(ProcessorContext iCtx) throws Throwable {
         Task ctx = iCtx.getCrawlerContext();
-        String field = generateField(ctx.getRequest());
+        String field = generateField(ctx);
         if (isCached(field)) {
             log.info("该任务已缓存，不再发送请求 {} {}", ctx.getTaskDef().getName(), ctx.getUri());
             return ProcessorResult.CONTINUE_STAGE;
@@ -96,7 +101,13 @@ public class RedisCacheProcessor extends CacheProcessor {
      * 
      * <p>该方法的执行非常频繁，需要特别注意效率
      */
-    protected String generateField(HttpRequestBase request) throws Throwable {
+    protected String generateField(Task task) throws Throwable {
+        
+        if (task.getIdentityKey() != null) {
+            return task.getIdentityKey();
+        }
+        
+        HttpRequestBase request = task.getRequest();
         // 1. 尝试通过ThreadLocal缓存直接获取哈希键
         Pair<HttpRequestBase, String> pair = lastRequestFieldThreadLocal.get();
         if (pair != null && request.equals(pair.getFirst())) {
@@ -147,16 +158,16 @@ public class RedisCacheProcessor extends CacheProcessor {
     public ProcessorResult receiveResponseByCache(ProcessorContext iCtx) throws Throwable {
         // TODO Auto-generated method stub
         Task ctx = iCtx.getCrawlerContext();
-        String field = generateField(ctx.getRequest());
+        String field = generateField(ctx);
         if (isCached(field)) {
             // 若有缓存该请求，则直接从缓存获取响应
             ResponseEntity responseEntity;
-            redisLock.lock();
-            try {
-                responseEntity = (ResponseEntity) commands.hget(HKEY, field);
-            } finally {
-                redisLock.unlock();
-            }
+            responseEntity = (ResponseEntity) RedisUtils.getAsyncCommands(redisURI).hget(HKEY, field).get();
+//            redisLock.lock();
+//            try {
+//            } finally {
+//                redisLock.unlock();
+//            }
             
             if (responseEntity != null) {
                 log.info("从Redis缓存中获取数据：{} {}", ctx.getTaskDef().getName(), ctx.getUri());
@@ -174,7 +185,7 @@ public class RedisCacheProcessor extends CacheProcessor {
     @Override
     public ProcessorResult afterHandleResultByCache(ProcessorContext iCtx) throws Throwable {
         Task ctx = iCtx.getCrawlerContext();
-        String field = generateField(ctx.getRequest());
+        String field = generateField(ctx);
         if (!isCached(field)) {
             List<Throwable> throwables = ctx.getThrowables();
             // 若响应不为空且没有发生过异常，则缓存该请求
@@ -184,13 +195,13 @@ public class RedisCacheProcessor extends CacheProcessor {
                 ResponseEntity responseEntity = ctx.getResponseEntity();
                 
                 log.info("添加新缓存：{} {}", ctx.getTaskDef().getName(), ctx.getUri());
+                RedisUtils.getAsyncCommands(redisURI).hset(HKEY, field, responseEntity).get();
                 
-                redisLock.lock();
-                try {
-                    commands.hset(HKEY, field, responseEntity);
-                } finally {
-                    redisLock.unlock();
-                }
+//                redisLock.lock();
+//                try {
+//                } finally {
+//                    redisLock.unlock();
+//                }
             }
         }
 
@@ -205,13 +216,18 @@ public class RedisCacheProcessor extends CacheProcessor {
         if (pair != null && field.equals(pair.getFirst())) {
             return pair.getSecond();
         } else {
-            final boolean isCached;
-            redisLock.lock();
+            boolean isCached = false;
             try {
-                isCached = commands.hexists(HKEY, field);
-            } finally {
-                redisLock.unlock();
+                isCached = RedisUtils.getAsyncCommands(redisURI).hexists(HKEY, field).get();
+            } catch (InterruptedException | ExecutionException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
             }
+//            redisLock.lock();
+//            try {
+//            } finally {
+//                redisLock.unlock();
+//            }
             isFieldCachedThreadLocal.set(Pair.of(field, isCached));
             return isCached;
         }

@@ -114,6 +114,10 @@ public class CrawlerJob {
         return true;
     }
     
+    public boolean start(String taskName, String seedUri) {
+        return start(taskName, seedUri, null);
+    }
+    
     public boolean addSpecificTask(String taskName, String seedUri, String entity) {
         taskName = Optional.ofNullable(taskName).orElse(tasks.entrySet().iterator().next().getKey());
         Task ctx = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
@@ -148,7 +152,7 @@ public class CrawlerJob {
      * 
      * @return
      */
-    public CrawlerJob withASCPriorityOrder() {
+    public CrawlerJob withDescPriorityOrder() {
         this.descPriority = true;
         return this;
     }

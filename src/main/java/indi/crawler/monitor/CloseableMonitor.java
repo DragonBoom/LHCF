@@ -5,6 +5,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 import indi.crawler.bootstrap.CrawlerJob;
+import indi.crawler.task.CrawlerController;
+import indi.crawler.thread.CrawlerThreadPool;
+import indi.exception.WrapperException;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +19,9 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class CloseableMonitor {
     private CrawlerJob job;
+    /**
+     * 在结束进程前，将按默认顺序打印该Map的value
+     */
     @Getter
     @Setter
     private static Map<String, String> toLogAtEndMap = new HashMap<>();
@@ -28,6 +34,16 @@ public class CloseableMonitor {
     public CloseableMonitor(CrawlerJob job) {
         this.job = job;
         init();
+    }
+    
+    /**
+     * 添加在爬虫任务结束时记录的日志内容
+     * 
+     * @param key 日志内容的key，用于对待输入的日志做标记
+     * @param msg 日志内容
+     */
+    public static void addLogAtEnd(String key, String msg) {
+        toLogAtEndMap.put(key, msg);
     }
 
     public class CloseableMonitorThread extends Thread {
@@ -44,9 +60,8 @@ public class CloseableMonitor {
             
             try {
                 Thread.sleep(2 * SLEEP_MILLIS);
-            } catch (InterruptedException e1) {
-                // TODO Auto-generated catch block
-                e1.printStackTrace();
+            } catch (InterruptedException e) {
+                throw new WrapperException(e);
             }
 
             while (true) {
@@ -55,7 +70,13 @@ public class CloseableMonitor {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-                if (job.getController().getTaskPool().isEmpty()) {
+                CrawlerController controller = job.getController();
+                CrawlerThreadPool threadPool = controller.getThreadPool();
+                // 若爬虫池没有任务 并且 线程池没有线程正在工作，则结束任务
+                if (controller.getTaskPool().isEmpty() && threadPool.isOver()) {
+                    // 关闭线程池
+                    threadPool.shutdown();
+                    
                     Date now = new Date();
                     long millis = now.getTime() - begin.getTime();
                     log.info(

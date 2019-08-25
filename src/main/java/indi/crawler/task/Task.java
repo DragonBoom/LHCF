@@ -95,7 +95,8 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Log, Serial
     // HTTP响应实体，懒加载
     private transient ResponseEntity responseEntity = null;
     // 由本Context产生的子任务
-    private transient List<Task> childs;    
+    private transient List<Task> childs;
+    private String identityKey;// 身份编码
 
     @Override
     public void cleanup() {

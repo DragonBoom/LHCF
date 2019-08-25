@@ -103,12 +103,12 @@ public class JVMMonitor {
                 }
                 if (cleanSize > 0) {
                     // 若有清理爬虫上下文
-                    log.debug("## JVM Monitor will clean [ {} / {} ] cralwer context", cleanSize,
+                    log.info("## JVM Monitor will clean [ {} / {} ] cralwer context", cleanSize,
                             leasedSize);
                     System.gc();
                 } else {
                     // 若没有清理爬虫上下文，则输出出租中的爬虫上下文的情况
-                    log.debug("No task complete during this time, still leaseds: {}", leasedSize);
+                    log.info("No task complete during this time, still leaseds: {}", leasedSize);
                     leaseds = null; // for gc !!!
                 }
             }

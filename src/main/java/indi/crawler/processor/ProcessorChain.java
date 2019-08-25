@@ -35,6 +35,11 @@ public class ProcessorChain {
         init(controller);
     }
 
+    /**
+     * 执行爬虫任务
+     * 
+     * @param ctx
+     */
     public void process(Task ctx) {
         TaskDef task = ctx.getTaskDef();
         List<Processor> processors = task.getCrawlerProcessors();
@@ -51,7 +56,7 @@ public class ProcessorChain {
     }
 
     /**
-     * 初始化Task的处理器链并返回
+     * 初始化Task的处理器链并返回。简单地在方法上加synchronized以应对并发问题。
      */
     private synchronized List<Processor> initInterceptors(TaskDef task) {
         List<Processor> processors = task.getCrawlerProcessors();
@@ -59,8 +64,9 @@ public class ProcessorChain {
         if (processors != null) {
             return processors;
         }
+        
         List<Processor> customInterceptors = task.getCustomProcessors();
-        processors = new ArrayList<>(customInterceptors.size() + 1);// 1 for connection processor
+        processors = new ArrayList<>(customInterceptors.size() + 1);// + 1 for connection processor
 
         ProcessorExecutor executor = getExecutor(task);
         Processor connectionProcessor = executor.getConnectionProcessor();

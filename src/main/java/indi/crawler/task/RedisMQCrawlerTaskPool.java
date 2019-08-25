@@ -17,6 +17,8 @@ import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 import indi.crawler.task.def.TaskDef;
+import indi.crawler.thread.CrawlerThread;
+import indi.crawler.util.RedisUtils;
 import indi.data.StringObjectRedisCodec;
 import indi.exception.WrapperException;
 import io.lettuce.core.KeyValue;
@@ -41,8 +43,10 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class RedisMQCrawlerTaskPool implements TaskPool {
     private CrawlerController controller;
-    private RedisClient client;
-    private RedisCommands<String,Object> commands;
+    private String redisURI;
+//    private RedisClient client;
+//    private RedisCommands<String,Object> commands;
+//    private ThreadLocal<RedisCommands<String,Object>> commandsThreadLocal;
     
     private PriorityBlockingQueue<Task> leaseds;
     
@@ -57,18 +61,26 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     private void init(String redisURI) {
         taskDefs = new LinkedList<>();
         taskDefsLock = new ReentrantLock();
-        redisKeys = new String[0];
-        
-        client = RedisClient.create(redisURI);
-        client.setDefaultTimeout(Duration.ofMinutes(2));
-        StatefulRedisConnection<String, Object> connect = client.connect(new StringObjectRedisCodec());
+        redisKeys = new String[] {"init"};// init key 
+//        
+//        client = RedisClient.create(redisURI);
+//        client.setDefaultTimeout(Duration.ofMinutes(2));
+//        
+//        commandsThreadLocal = new ThreadLocal<RedisCommands<String,Object>>() {
+//
+//            @Override
+//            protected RedisCommands<String, Object> initialValue() {
+//                StatefulRedisConnection<String, Object> connect = client.connect(new StringObjectRedisCodec());
+//                return connect.sync();
+//            }
+//        };
 
-        commands = connect.sync();
         
         leaseds = new PriorityBlockingQueue<>();
     }
     
     public RedisMQCrawlerTaskPool(String redisURI, CrawlerController controller) {
+        this.redisURI = redisURI;
         this.controller = controller;
         init(redisURI);
     }
@@ -109,7 +121,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
         // remove from leaseds
         leaseds.remove(task);
         
-        commands.lpush(redisListKey, simpleTask);
+        RedisUtils.getAsyncCommands(redisURI).lpush(redisListKey, simpleTask);
         return true;
     }
     
@@ -147,36 +159,45 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
      */
     @Override
     public Task poll() {
-        // 若第一个插入还没有完成，等待后返回null
-        long sleepMillis = getNeedSleepMillis();
-        
-        if (sleepMillis > 0) {
-            try {
-                Thread.sleep(sleepMillis);
-            } catch (InterruptedException e) {
-                throw new WrapperException(e);
-            }
-            // 直接返回null，表明该线程拿不到爬虫任务
-            return null;
-        }
-        final KeyValue<String, Object> kv;
+//        // 若第一个插入还没有完成，等待后返回null
+//        long sleepMillis = getNeedSleepMillis();
+//        
+//        if (sleepMillis > 0) {
+//            try {
+//                Thread.sleep(sleepMillis);
+//            } catch (InterruptedException e) {
+//                throw new WrapperException(e);
+//            }
+//            // 直接返回null，表明该线程拿不到爬虫任务
+//            return null;
+//        }
+        KeyValue<String, Object> kv = null;
         pollLock.lock();
         try {
-            sleepMillis = getNeedSleepMillis();
-            if (sleepMillis > 0) {
-                // 直接返回null，表明该线程拿不到爬虫任务
-                return null;
-            }
-            kv = commands.brpop(brpopTimeoutSeconds, redisKeys);
+//            sleepMillis = getNeedSleepMillis();
+//            if (sleepMillis > 0) {
+//                // 直接返回null，表明该线程拿不到爬虫任务
+//                return null;
+//            }
+            kv = RedisUtils.getAsyncCommands(redisURI).brpop(brpopTimeoutSeconds, redisKeys).get();
             // 只要有一个线程poll超时或队列为空时，其他所有线程就等待固定的一段时间，确保不因为poll阻塞导致无法push，从而造成死循环
+            // 2019.08.25: 理论上不应该出现这种多个线程一起阻塞的情况。之前应该是因为不同线程共用同一个连接才导致了阻塞
             if (kv == null) {
-                // pop失败，计算下一次pop的最快时间
-                Calendar calendar = Calendar.getInstance();
-                calendar.add(Calendar.SECOND, (int) brpopFailDeferralSeconds);
-                wakeUpMillis = calendar.getTimeInMillis();
-                log.warn("pop fail will sleep {} seconds", brpopFailDeferralSeconds);
+//                // pop失败，计算下一次pop的最快时间
+//                Calendar calendar = Calendar.getInstance();
+//                calendar.add(Calendar.SECOND, (int) brpopFailDeferralSeconds);
+//                wakeUpMillis = calendar.getTimeInMillis();
+//                log.warn("pop fail will sleep {} seconds", brpopFailDeferralSeconds);
                 return null;
             }
+        } catch (InterruptedException | ExecutionException e) {
+            // 结束线程时，由于线程仍在这里阻塞，会导致无意义的报错，因此这里加这个判断
+            CrawlerThread currentThread = (CrawlerThread) Thread.currentThread();
+            if (currentThread.isRetire()) {
+                return null;
+            }
+            
+            e.printStackTrace();
         } finally {
             pollLock.unlock();
         }
@@ -257,7 +278,12 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     public int availableSize() {
         int result = 0;
         for (String redisKey : redisKeys) {
-            result += commands.llen(redisKey);
+            try {
+                result += RedisUtils.getAsyncCommands(redisURI).llen(redisKey).get();
+            } catch (InterruptedException | ExecutionException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
         }
         return result;
     }
@@ -266,7 +292,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     public boolean isEmpty() {
 //        return false;
         
-        return availableSize() + getLeasedSize() == 0;
+        return (availableSize() + getLeasedSize()) == 0;
     }
 
 }

@@ -22,5 +22,5 @@ public interface ResultHelper {
      */
     void addNewTask(String taskName, String uri, String requestEntity);
     
-    List<Task> getNewTask();
+    List<Task> getNewTasks();
 }

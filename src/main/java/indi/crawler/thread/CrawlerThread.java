@@ -3,6 +3,7 @@ package indi.crawler.thread;
 import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
 import indi.util.Message;
+import lombok.Getter;
 
 /**
  * 爬虫线程类，不包含具体工作的逻辑
@@ -12,6 +13,7 @@ import indi.util.Message;
  */
 public class CrawlerThread extends Thread implements Message {
     private CrawlerController controller;
+    @Getter
     private volatile boolean retire;
     private Task currentContext;
     private int workNumber;
@@ -60,14 +62,6 @@ public class CrawlerThread extends Thread implements Message {
     public boolean isWorking() {
         return currentContext != null ? true : false;
     }
-//
-//    @Override
-//    public String toString() {
-//        StringBuilder sb = new StringBuilder(this.getName());
-//        sb.append(" , This Thread Current CrawlerContext is ")
-//            .append(Optional.ofNullable(currentContext.toString()).orElse("not exist"));
-//        return sb.toString();
-//    }
 
     @Override
     public String getMessage() {

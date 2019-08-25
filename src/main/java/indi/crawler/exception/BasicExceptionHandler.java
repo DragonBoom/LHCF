@@ -101,6 +101,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
                 ctx.setWakeUpTime(System.currentTimeMillis() + ctx.getRetryDeferrals()
                         + additionalWaitMillis);
                 ctx.setPriority(ctx.getTaskDef().getPriority() + ctx.getPriority());
+                log.info("重新执行回收的爬虫：{}", ctx);
                 ctx.getController().offer(ctx);
                 return;
             } else {
