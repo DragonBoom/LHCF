@@ -17,9 +17,9 @@ public class MemoryCookieStore extends BasicCookieStore {
 //    private ListMultimap<String, HttpCookie> store;
     
     /**
-     * Table<\Domain, CookieKey, HttpCookie>。
+     * Table<\Domain(String), CookieKey(String), HttpCookie>。
      * 
-     * 用Table而不是Multimap是为了解决cookieKey重复的问题
+     * 用Table而不是Multimap是为了解决cookie的Key重复的问题
      */
     private Table<String, String, HttpCookie> store;// for add
     private HashMultimap<String, HttpCookie> multimap;// for get
@@ -40,7 +40,6 @@ public class MemoryCookieStore extends BasicCookieStore {
 
     @Override
     public Collection<HttpCookie> get0(String domain) {
-        // TODO Optimise 没必要每次都创建新的LinkedList对象
         Set<HttpCookie> cookies = multimap.get(domain);
         return cookies;
     }

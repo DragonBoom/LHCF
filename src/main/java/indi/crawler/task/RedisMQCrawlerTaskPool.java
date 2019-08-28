@@ -80,6 +80,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     }
     
     public RedisMQCrawlerTaskPool(String redisURI, CrawlerController controller) {
+        log.info("使用Redis消息队列爬虫任务池");
         this.redisURI = redisURI;
         this.controller = controller;
         init(redisURI);

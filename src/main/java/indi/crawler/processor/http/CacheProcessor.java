@@ -11,7 +11,7 @@ import lombok.AllArgsConstructor;
  *
  */
 @AllArgsConstructor
-public abstract class CacheProcessor extends HttpProcessor {
+public abstract class CacheProcessor extends HTTPProcessor {
     
     @Override
     public ProcessorResult executeRequest0(ProcessorContext iCtx) throws Throwable {

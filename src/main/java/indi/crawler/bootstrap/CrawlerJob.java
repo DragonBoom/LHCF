@@ -16,6 +16,7 @@ import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
 import indi.crawler.task.def.SpecificTask;
 import indi.crawler.task.def.TaskDef;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -28,10 +29,12 @@ import lombok.extern.slf4j.Slf4j;
 public class CrawlerJob {
     private Map<String, TaskDef> tasks;
     private Task seed;
-    private CrawlerController controller;
+    private CrawlerController controller;// 懒加载，以确保其他配置好后再初始化控制器
     private CookieStore cookieStore;
     private HttpHost proxy;
     private boolean descPriority;
+    @Getter
+    private String redisURI;
 
     /**
      * 初始化爬虫项目
@@ -39,12 +42,14 @@ public class CrawlerJob {
     private void init() {
         cookieStore = new MemoryCookieStore();
         tasks = new ConcurrentHashMap<>();
-        controller = new CrawlerController(this);
-        new CloseableMonitor(this);
     }
 
-    public CrawlerJob() {
+    private CrawlerJob() {
         init();
+    }
+    
+    public static CrawlerJob build() {
+        return new CrawlerJob();
     }
     
     private List<Integer> priorityCache = new ArrayList<>();
@@ -107,6 +112,7 @@ public class CrawlerJob {
      * @return
      */
     public boolean start(String taskName, String seedUri, String entity) {
+        preStart();
         seed = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
         controller.offer(seed);
         // clear cache
@@ -115,7 +121,18 @@ public class CrawlerJob {
     }
     
     public boolean start(String taskName, String seedUri) {
+        preStart();
         return start(taskName, seedUri, null);
+    }
+    
+    /**
+     * 启动前执行的逻辑
+     */
+    protected synchronized void preStart() {
+        if (controller == null) {
+            controller = new CrawlerController(this);
+            new CloseableMonitor(this);
+        }
     }
     
     public boolean addSpecificTask(String taskName, String seedUri, String entity) {
@@ -162,6 +179,17 @@ public class CrawlerJob {
      */
     public TaskDef.Builder withTask(String taskName) {
         return TaskDef.Builder.begin(taskName, this);
+    }
+    
+    /**
+     * 使用redis消息队列作为爬虫任务池
+     * 
+     * @param redisURI
+     * @return
+     */
+    public CrawlerJob withRedisMQTaskPool(String redisURI) {
+        this.redisURI = redisURI;
+        return this;
     }
     
 

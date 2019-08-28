@@ -8,7 +8,7 @@ import indi.crawler.monitor.CloseableMonitor;
 import indi.crawler.processor.ProcessorContext;
 import indi.crawler.processor.ProcessorResult;
 
-public class LogSpeedProcessor extends HttpProcessor {
+public class LogSpeedProcessor extends HTTPProcessor {
     private AtomicLong downloadByteCount = new AtomicLong();
 
     @Override

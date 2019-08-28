@@ -15,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
  *
  */
 @Slf4j
-public class LogProcessor extends HttpProcessor {
+public class LogProcessor extends HTTPProcessor {
 
 	private String stringifyHeaders(Header[] headers) {
 		StringBuilder sb = new StringBuilder();

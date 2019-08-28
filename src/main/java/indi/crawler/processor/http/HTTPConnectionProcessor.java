@@ -1,9 +1,14 @@
 package indi.crawler.processor.http;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
@@ -22,6 +27,7 @@ import indi.crawler.task.CrawlerController;
 import indi.crawler.task.ResponseEntity;
 import indi.crawler.task.ResponseEntity.TYPE;
 import indi.crawler.task.Task;
+import indi.util.FileUtils;
 
 /**
  * 负责处理Http连接。包含HTTP爬虫的处理逻辑
@@ -29,7 +35,7 @@ import indi.crawler.task.Task;
  * @author DragonBoom
  *
  */
-public class HTTPConnectionProcessor extends HttpProcessor {
+public class HTTPConnectionProcessor extends HTTPProcessor {
     private static final String DEFAULT_CHARSET = "utf-8";
     private static final int DEFAULT_MAX_ROUTE = Integer.MAX_VALUE;
     private static final int DEFAULT_MAX_PER_ROUTE = Integer.MAX_VALUE;
@@ -72,31 +78,42 @@ public class HTTPConnectionProcessor extends HttpProcessor {
         // TODO
         charset = Optional.ofNullable(charset).orElse(DEFAULT_CHARSET);
         HttpResponse response = ctx.getResponse();
-        HttpEntity entity = response.getEntity();
+        HttpEntity httpEntity = response.getEntity();
         // when gzip
 //        GzipDecompressingEntity gzipDecompressingEntity = new GzipDecompressingEntity(entity);
 //        gzipDecompressingEntity.getContent();
         ResponseEntity responseEntity = ctx.getResponseEntity();
         
         Object resultV = null;
-        resultV = EntityUtils.toByteArray(entity);
+        // 将字节存到文件中
 
         TYPE type = responseEntity.getType();
         Objects.requireNonNull(type);
         switch (responseEntity.getType()) {
         case String:
-            resultV = new String((byte[]) resultV, charset);
+            byte[] bytes = EntityUtils.toByteArray(httpEntity);
+            resultV = new String(bytes, charset);
             break;
         case ByteArray:
+            break;
+        case File:
+            // gen tmp file
+            File tmpFile = FileUtils.genTmpFile(tmpDir);
+            try (FileOutputStream outStream = new FileOutputStream(tmpFile)) {
+                httpEntity.writeTo(outStream);
+            }
+            resultV = tmpFile;
             break;
         default:
             throw new RuntimeException("Not Support response type " + responseEntity.getType());
         }
-        EntityUtils.consume(entity);// 结束响应
+        EntityUtils.consume(httpEntity);// 结束响应
         responseEntity.setContent(resultV);
 
         return ProcessorResult.CONTINUE_STAGE;
     }
+    
+    private String tmpDir = "e:/tmp/crawler/";// TODO: 可配
 
     @Override
     protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Exception {

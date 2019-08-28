@@ -17,6 +17,7 @@ import com.google.common.collect.ImmutableMap.Builder;
 import indi.crawler.recoder.CommonRecorder;
 import indi.crawler.recoder.Recorder;
 import indi.crawler.task.def.TaskDef;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * TODO: 考虑把等待队列中的任务移到Redis/消息队列中，以对付任务量过大/需要保存任务记录的情况
@@ -24,6 +25,7 @@ import indi.crawler.task.def.TaskDef;
  * @author DragonBoom
  *
  */
+@Slf4j
 public class BlockingQueueTaskPool implements TaskPool {
     private static final int DEFAULT_RECENTLY_WAKE_UP = 0;
 
@@ -61,6 +63,7 @@ public class BlockingQueueTaskPool implements TaskPool {
     }
 
     public BlockingQueueTaskPool() {
+        log.info("使用本地内存的阻塞队列爬虫任务池");
         init();
     }
 

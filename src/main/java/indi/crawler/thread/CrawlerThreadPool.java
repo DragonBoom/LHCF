@@ -71,13 +71,6 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         }
     }
 
-    private void killThread(CrawlerThread thread, boolean immediate) {
-        if (immediate) {
-            // TODO thread.interrupt();
-        }
-        thread.retire();
-    }
-
     public void shutdown() {
         for (Thread thread : threads) {
             CrawlerThread crawlerThread = (CrawlerThread) thread;

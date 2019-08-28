@@ -11,7 +11,7 @@ import indi.data.ThrowableBiFunction;
  * @since 2019.05.02
  *
  */
-public abstract class HttpProcessor extends Processor {
+public abstract class HTTPProcessor extends Processor {
 
     public ProcessorResult beforeAll(ProcessorContext pCtx) throws Throwable {
         ProcessorResult result = beforeAll0(pCtx);
@@ -74,12 +74,12 @@ public abstract class HttpProcessor extends Processor {
      * @throws Throwable
      */
     private ProcessorResult continueNext(ProcessorContext pCtx, ProcessorResult result,
-            ThrowableBiFunction<HttpProcessor, ProcessorContext, ProcessorResult> keepGoingFunForNext)
+            ThrowableBiFunction<HTTPProcessor, ProcessorContext, ProcessorResult> keepGoingFunForNext)
             throws Throwable {
         if (result.getResult() == ProcessorResult.Result.KEEP_GOING && next != null) {
             Processor next = getNext();
-            if (next instanceof HttpProcessor) {
-                return keepGoingFunForNext.apply((HttpProcessor) next, pCtx);
+            if (next instanceof HTTPProcessor) {
+                return keepGoingFunForNext.apply((HTTPProcessor) next, pCtx);
             } else {
                 throw new IllegalArgumentException("该处理器不是HTTP处理器: " + next);
             }

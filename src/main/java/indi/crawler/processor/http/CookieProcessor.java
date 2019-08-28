@@ -13,7 +13,7 @@ import indi.crawler.processor.ProcessorResult;
 import indi.crawler.task.Task;
 import indi.crawler.task.def.TaskDef;
 
-public class CookieProcessor extends HttpProcessor {
+public class CookieProcessor extends HTTPProcessor {
 
     // attach cookie
     @Override

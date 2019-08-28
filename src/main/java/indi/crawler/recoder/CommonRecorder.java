@@ -13,6 +13,7 @@ public class CommonRecorder implements Recorder {
 
     @Override
     public synchronized boolean chechAndRecord(Task ctx) {
+        // 仅缓存hashCode，以降低内存占用
         if (records.contains(ctx.hashCode())) {
             return false;
         }

@@ -17,7 +17,7 @@ import lombok.Setter;
 public class HTTPProcessorExecutor extends ProcessorExecutor {
     @Getter
     @Setter
-    private HttpProcessor connectionProcessor;
+    private HTTPProcessor connectionProcessor;
 
     public HTTPProcessorExecutor(CrawlerController controller) {
         this.connectionProcessor = new HTTPConnectionProcessor(controller);
@@ -30,8 +30,8 @@ public class HTTPProcessorExecutor extends ProcessorExecutor {
         initCrawlerContext(ctx);
         
         ProcessorResult result = null;
-        if (firstProcessor instanceof HttpProcessor) {
-            HttpProcessor firstHttpProcessor = (HttpProcessor) firstProcessor;
+        if (firstProcessor instanceof HTTPProcessor) {
+            HTTPProcessor firstHttpProcessor = (HTTPProcessor) firstProcessor;
             result = firstHttpProcessor.beforeAll(pCtx);
             if (isOver(result)) {
                 return result;

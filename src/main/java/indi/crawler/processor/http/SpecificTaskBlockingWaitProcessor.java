@@ -13,7 +13,7 @@ import lombok.extern.slf4j.Slf4j;
  * 
  */
 @Slf4j
-public class SpecificTaskBlockingWaitProcessor extends HttpProcessor {
+public class SpecificTaskBlockingWaitProcessor extends HTTPProcessor {
 	private final TaskDef task;
 	private final long waitMillis;
 	private volatile long lastOpen;

@@ -1,5 +1,6 @@
 package indi.crawler.task.def;
 
+import java.io.Serializable;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -40,7 +41,7 @@ import lombok.ToString;
 @Getter
 //@Setter
 @ToString
-public class TaskDef implements Comparable<TaskDef> {
+public class TaskDef implements Comparable<TaskDef>, Serializable {
     private static final long serialVersionUID = 1L;
 
     private static final int DEFAULT_REQUEST_TIMEOUT = 4000;
@@ -313,6 +314,9 @@ public class TaskDef implements Comparable<TaskDef> {
             return this;
         }
         
+        /**
+         * 配置爬虫的id计算函数
+         */
         public Builder withKeyGenerator(BiFunction<String, HttpRequestBase, String> idKeyGenerator) {
             task.idKeyGenerator = idKeyGenerator;
             return this;

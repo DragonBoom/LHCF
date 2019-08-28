@@ -23,7 +23,7 @@ public class CrawlerController {
     private TaskPool taskPool;
     @Getter
     @Setter
-    private CrawlerThreadPool threadPool;
+    private CrawlerThreadPool threadPool;// 懒加载
     @Getter
     private CrawlerJob job;
     @Getter
@@ -35,9 +35,13 @@ public class CrawlerController {
     /**
      * 初始化
      */
-    private void init() {
-//        taskPool = new BlockingQueueTaskPool();
-        taskPool = new RedisMQCrawlerTaskPool("redis://@localhost:1081/0", this);
+    private void init(CrawlerJob job) {
+//        String redisURI = job.getRedisURI();
+//        if (redisURI != null) {
+//            taskPool = new RedisMQCrawlerTaskPool(redisURI, this);
+//        } else {
+//            taskPool = new BlockingQueueTaskPool();
+//        }
         threadPool = new CrawlerThreadPool(this);
 
         chain = new ProcessorChain(this);
@@ -49,11 +53,25 @@ public class CrawlerController {
 
     public CrawlerController(CrawlerJob job) {
         this.job = job;
-        init();
+        init(job);
     }
 
     public TaskPool getPool() {
+        if (taskPool == null) {
+            initTaskPool();
+        }
         return taskPool;
+    }
+    
+    private synchronized void initTaskPool() {// FIXME: 缩小锁的粒度
+        if (taskPool == null) {
+            String redisURI = job.getRedisURI();
+            if (redisURI != null) {
+                taskPool = new RedisMQCrawlerTaskPool(redisURI, this);
+            } else {
+                taskPool = new BlockingQueueTaskPool();
+            }
+        }
     }
 
     /**
@@ -64,10 +82,16 @@ public class CrawlerController {
     }
     
     public boolean offer(Task ctx) {
+        if (taskPool == null) {
+            initTaskPool();
+        }
         return taskPool.offer(ctx);
     }
     
     public Task poll() {
+        if (taskPool == null) {
+            initTaskPool();
+        }
         return taskPool.poll();
     }
 }
