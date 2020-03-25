@@ -14,6 +14,12 @@ import indi.crawler.thread.CrawlerThread;
 import lombok.Getter;
 import lombok.Setter;
 
+/**
+ * HTTPProcessor链的启动器
+ * 
+ * @author wzh
+ * @since 2020.01.18
+ */
 public class HTTPProcessorExecutor extends ProcessorExecutor {
     @Getter
     @Setter

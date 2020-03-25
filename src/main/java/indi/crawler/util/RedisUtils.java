@@ -13,6 +13,11 @@ import io.lettuce.core.api.async.RedisAsyncCommands;
 import io.lettuce.core.codec.RedisCodec;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * 基于lettuce操作Redis的工具类
+ * 
+ * @author DragonBoom
+ */
 @Slf4j
 public class RedisUtils {
     private static final RedisCodec<String, Object> STRING_OBJECT_CODEC = new StringObjectRedisCodec();
@@ -21,7 +26,7 @@ public class RedisUtils {
     private static Lock lock = new ReentrantLock();
     
     /**
-     * 为每个线程的每个uri创建一个连接（以确保brpop不会导致与其他线程的lpush阻塞）
+     * 获取异步命令。为每个线程（而不是每次调用）的每个uri创建一个连接（以确保brpop不会导致与其他线程的lpush阻塞）。
      */
     public static RedisAsyncCommands<String, Object> getAsyncCommands(String redisURI) {
         // 获取指定连接的ThreadLocal<RedisAsyncCommands>
@@ -60,7 +65,7 @@ public class RedisUtils {
     /**
      * 获取单例RedisClient，用内存缓存实现。
      * 
-     * @param redisURI 目前一个redisURI对应一个单例RedisClient，即使是同一个客户端，换一种写法也会获取到新的实例。后续有空再考虑优化这点
+     * @param redisURI 目前一个redisURI对应一个单例RedisClient，而且redisURI字符串必须完全相同才会获得同一个Clinet。后续有空再考虑优化这点
      * @return
      */
     public static RedisClient getClient(String redisURI) {

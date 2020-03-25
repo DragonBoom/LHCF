@@ -33,7 +33,10 @@ public class BasicExceptionHandler implements ExceptionHandler {
     
     private ImmutableMap<Class<? extends Throwable>, BiFunction<Task, Throwable, HandleResult>> handlers; 
     
-    private static final BiFunction<Task, Throwable, HandleResult> RECOVER_HANDLER = (ctx, e) -> HandleResult.RECOVER;
+    private static final BiFunction<Task, Throwable, HandleResult> RECOVER_HANDLER = (ctx, e) -> {
+        log.error("发生可回收异常，将回收爬虫并重试：{}", e.getMessage());
+        return HandleResult.RECOVER;
+    };
     
     protected void init() {
         // list -> 1
@@ -74,7 +77,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
         ctx.addThrowables(throwable);
         
         TaskDef task = ctx.getTaskDef();
-
+        // 尝试用已有的处理器去处理异常，若找不到对应的处理器，再用默认的处理器处理
         BiFunction<Task, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
             log.error("该异常目前尚无法处理，将尝试再次处理-{} {} \n {}", task.getName(), e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
@@ -84,7 +87,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
         });
         
         HandleResult handleResult = handler.apply(ctx, throwable);
-        
+        // 若处理器处理的结果是回收，则开始走回收流程，尝试再次执行任务
         if (handleResult == HandleResult.RECOVER) {
             int attempts = ctx.getAttempts();
             attempts++;
@@ -92,7 +95,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
             long totalCounts = ctx.getTaskDef().getTotalCounts().get();
             
             if (attempts <= ctx.getMaxRetries()) {
-                // 若没有超过最大重试次数，则将任务放到延时队列中
+                // 没有超过最大重试次数，将任务放到爬虫池的延时队列中
                 ctx.setStatus(CrawlerStatus.DEFERRED);
                 // 直接线程等待很浪费资源，故将其放进等待队列，需要取值时才去判断一次是否过了等待时间
                 // 等待时间 = context的等待时间 + 额外等待时间
@@ -101,13 +104,15 @@ public class BasicExceptionHandler implements ExceptionHandler {
                 ctx.setWakeUpTime(System.currentTimeMillis() + ctx.getRetryDeferrals()
                         + additionalWaitMillis);
                 ctx.setPriority(ctx.getTaskDef().getPriority() + ctx.getPriority());
-                log.info("重新执行回收的爬虫：{}", ctx);
-                ctx.getController().offer(ctx);
+                log.info("回收{}爬虫(第 {} / {} 次)：{}", ctx.getTaskDef().getName(), ctx.getAttempts(), ctx.getMaxRetries(), ctx);
+                ctx.getController().recover(ctx);
                 return;
             } else {
                 // 超过了最大重试次数，则标记任务无法完成，等待被回收
                 log.error("任务超过最大重试次数：{} 次，将停止工作!! 最后一次尝试抛出的异常为：{}", ctx.getMaxRetries(), throwable);
                 ctx.setStatus(CrawlerStatus.INTERRUPTED);
+                // 若此前曾经被回收，此时爬虫可能已经不存在于出租队列中（要看爬虫池的具体实现）
+                // TODO: log
                 return;
             }
         }

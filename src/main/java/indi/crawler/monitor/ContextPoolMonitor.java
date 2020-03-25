@@ -5,25 +5,28 @@ import indi.crawler.task.TaskPool;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 该类用于监视上下文池
+ * 爬虫上下文池监视器。目前的功能：
+ * 
+ * <li>定时打印爬虫池的信息
  *
  */
 @Slf4j
-public class ContextPoolMonitor {
+public class ContextPoolMonitor extends Monitor {
 	private CrawlerJob job;
+	private TaskPool pool;
 
 	private void init(long millis) {
-		ContextPoolMonitorThread t = new ContextPoolMonitorThread(millis);
-		t.start();
+		new ContextPoolMonitorThread(millis).startDeamon(job.getController());
 		log.info("Start Context Pool Monitor");
 	}
 
 	public ContextPoolMonitor(CrawlerJob job, long millis) {
 		this.job = job;
+		pool = job.getController().getTaskPool();
 		init(millis);
 	}
 
-	private class ContextPoolMonitorThread extends Thread {
+	private class ContextPoolMonitorThread extends MonitorThread {
 	    private long millis;
 
 		public ContextPoolMonitorThread(long millis) {
@@ -33,8 +36,7 @@ public class ContextPoolMonitor {
 
 		@Override
 		public void run() {
-		    TaskPool pool = job.getController().getTaskPool();
-			while (true) {// TODO ? retire?
+			while (!retire) {
 				try {
 					Thread.sleep(millis);
 				} catch (InterruptedException e) {

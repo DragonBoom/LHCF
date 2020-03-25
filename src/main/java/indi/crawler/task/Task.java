@@ -9,18 +9,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import javax.jws.HandlerChain;
+
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.impl.client.CloseableHttpClient;
 
+import indi.bean.BeanUtils;
 import indi.crawler.task.def.TaskDef;
 import indi.crawler.thread.CrawlerThread;
-import indi.util.BeanUtils;
-import indi.util.Cleanupable;
-import indi.util.Log;
-import indi.util.Message;
+import indi.obj.Cleanupable;
+import indi.obj.Logable;
+import indi.obj.Message;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,7 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 @ToString
 @Slf4j
 @NoArgsConstructor(access = AccessLevel.PACKAGE)
-public class Task implements Cleanupable, Comparable<Task>, Message, Log, Serializable {
+public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
@@ -113,6 +115,12 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Log, Serial
         return o.getPriority() - this.priority; // TreeMap 取值时优先取小值！！
     }
 
+    /**
+     * 延期唤醒的爬虫任务的比较器，用于比较哪个爬虫更先唤醒
+     * 
+     * @author wzh
+     * @since 2020.01.18
+     */
     public static class DeferralContextComparator implements Comparator<Task> {
 
         @Override

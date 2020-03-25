@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
+import indi.crawler.exception.AbortTaskException;
 import indi.crawler.exception.BasicExceptionHandler;
 import indi.crawler.exception.ExceptionHandler;
 import indi.crawler.processor.http.HTTPProcessorExecutor;
@@ -50,6 +51,8 @@ public class ProcessorChain {
         ProcessorExecutor executor = getExecutor(task);
         try {
             executor.execute(pCtx, processors);
+        } catch (AbortTaskException e) {
+            throw e;// 继续对外抛出异常
         } catch (Throwable e) {
             exceptionHandler.handleException(pCtx, e);
         }
@@ -69,7 +72,7 @@ public class ProcessorChain {
         processors = new ArrayList<>(customInterceptors.size() + 1);// + 1 for connection processor
 
         ProcessorExecutor executor = getExecutor(task);
-        Processor connectionProcessor = executor.getConnectionProcessor();
+        Processor connectionProcessor = executor.getConnectionProcessor();// 获取处理连接的处理器，将其放到执行链的末端
         // 添加自定义处理器
         processors.addAll(customInterceptors);
         // 添加连接处理器到List末端
@@ -91,6 +94,12 @@ public class ProcessorChain {
         return processors;
     }
 
+    /**
+     * 获取爬虫任务的执行器
+     * 
+     * @param task
+     * @return
+     */
     private ProcessorExecutor getExecutor(TaskDef task) {
         return executorMap.get(task.getType());
     }

@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
+import indi.crawler.filter.TaskFilter;
 import indi.crawler.task.def.TaskDef;
 import indi.crawler.thread.CrawlerThread;
 import indi.crawler.util.RedisUtils;
@@ -124,6 +125,13 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
         
         RedisUtils.getAsyncCommands(redisURI).lpush(redisListKey, simpleTask);
         return true;
+    }
+    
+
+    @Override
+    public boolean recover(Task task) {
+        // 暂不实现。。
+        return offer(task);
     }
     
     @Getter
@@ -294,6 +302,12 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
 //        return false;
         
         return (availableSize() + getLeasedSize()) == 0;
+    }
+
+    @Override
+    public boolean addFilter(TaskFilter filter) {
+        // TODO Auto-generated method stub
+        return false;
     }
 
 }

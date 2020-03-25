@@ -15,9 +15,9 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.entity.StringEntity;
 
+import indi.bean.BeanUtils;
 import indi.crawler.task.def.TaskDef;
 import indi.exception.WrapperException;
-import indi.util.BeanUtils;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.Setter;
@@ -38,6 +38,14 @@ import lombok.ToString;
 public class TaskFactory {
     private CrawlerController controller;
     
+    /**
+     * 创建新的爬虫任务。
+     * 
+     * @param taskName 爬虫任务定义的名称
+     * @param uri 请求路径
+     * @param requestEntityString 请求实体
+     * @return
+     */
     public Task build(String taskName, final URI uri, String requestEntityString) {
         TaskDef task = controller.getJob().getTaskDef(taskName);
         return build(task, uri, requestEntityString);

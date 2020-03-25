@@ -17,16 +17,15 @@ import lombok.extern.slf4j.Slf4j;
  *
  */
 @Slf4j
-public class JVMMonitor {
+public class JVMMonitor extends Monitor {
     private static final int TOTAL_SIZE_LIMIT = 10;
     private static final long LOOP_MILLIS = TimeUnit.MINUTES.toMillis(5);
     private CrawlerController crawlerController;
     private MemoryCollectorThread memoryCollectorThread;
 
     private void init() {
-        memoryCollectorThread = new MemoryCollectorThread(TOTAL_SIZE_LIMIT, LOOP_MILLIS);
-        memoryCollectorThread.setDaemon(true);
-        memoryCollectorThread.start();
+        new MemoryCollectorThread(TOTAL_SIZE_LIMIT, LOOP_MILLIS).startDeamon(crawlerController);;
+        
         log.info("Start JVM Monitor");
     }
 
@@ -39,7 +38,7 @@ public class JVMMonitor {
         memoryCollectorThread.retire();
     }
 
-    private class MemoryCollectorThread extends Thread {
+    private class MemoryCollectorThread extends MonitorThread {
         private int sizeThreshold;
         private long loopMillis;
         private volatile boolean retire = false;
@@ -81,35 +80,33 @@ public class JVMMonitor {
                     // 清空所有处于终端状态，无法继续执行的爬虫上下文
                     CrawlerStatus status = ctx.getStatus();
                     Objects.requireNonNull(status);
-                    if (status == CrawlerStatus.FINISHED || status == CrawlerStatus.ABORTED
-                            || status == CrawlerStatus.INTERRUPTED) {
-                        switch (status) {
-                        case ABORTED:
-                            log.info("爬虫任务已被中止，将进行回收 {}", ctx);
-                            break;
-                        case FINISHED:
-                            log.debug("爬虫任务已结束，但未主动回收。将由监视器进行回收 {}", ctx);
-                            break;
-                        case INTERRUPTED:
-                            log.warn("爬虫任务无法处理，将进行回收 {}", ctx);
-                            break;
-                        default:
-                            break;
-                        }
-                        ctx.cleanup();
-                        pool.removeLeased(ctx);
-                        cleanSize++;
+                    switch (status) {
+                    case ABORTED:
+                        log.info("爬虫任务已被中止，将进行回收 {}", ctx);
+                        break;
+                    case FINISHED:
+                        log.debug("爬虫任务已结束，但未主动回收。将由监视器进行回收 {}", ctx);
+                        break;
+                    case INTERRUPTED:
+                        log.warn("爬虫任务无法处理，将进行回收 {}", ctx);
+                        break;
+                    default:
+                        // 其他状态，跳过
+                        continue;
                     }
+                    // 清理爬虫
+                    ctx.cleanup();
+                    pool.removeLeased(ctx);
+                    cleanSize++;
                 }
                 if (cleanSize > 0) {
                     // 若有清理爬虫上下文
                     log.info("## JVM Monitor will clean [ {} / {} ] cralwer context", cleanSize,
                             leasedSize);
-                    System.gc();
+//                    System.gc();// 没必要手动gc浪费cpu资源
                 } else {
                     // 若没有清理爬虫上下文，则输出出租中的爬虫上下文的情况
                     log.info("No task complete during this time, still leaseds: {}", leasedSize);
-                    leaseds = null; // for gc !!!
                 }
             }
         }

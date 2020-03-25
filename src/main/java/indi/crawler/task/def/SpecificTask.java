@@ -7,7 +7,7 @@ import java.util.Optional;
 
 import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
-import indi.util.Cleanupable;
+import indi.obj.Cleanupable;
 
 /**
  * Task + URI + RequestEntity

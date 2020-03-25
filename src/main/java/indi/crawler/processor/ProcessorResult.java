@@ -23,7 +23,7 @@ public class ProcessorResult {
     }
     /**继续执行*/
     public static final ProcessorResult KEEP_GOING = new ProcessorResult(Result.KEEP_GOING, null);
-    /**跳过当前环节*/
+    /**跳过之后的环节*/
     public static final ProcessorResult CONTINUE_STAGE = new ProcessorResult(Result.CONTINUE_STAGE, null);
     /**结束处理*/
     public static final ProcessorResult OVER = new ProcessorResult(Result.OVER, null);

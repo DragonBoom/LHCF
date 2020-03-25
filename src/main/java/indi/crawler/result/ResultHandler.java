@@ -1,9 +1,6 @@
 package indi.crawler.result;
 
-import java.util.List;
-
 import indi.crawler.task.Task;
-import indi.crawler.task.def.SpecificTask;
 
 public interface ResultHandler {
 

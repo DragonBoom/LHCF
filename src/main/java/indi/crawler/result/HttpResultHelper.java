@@ -6,8 +6,13 @@ import java.util.List;
 
 import indi.crawler.task.Task;
 import indi.crawler.task.TaskFactory;
-import indi.crawler.task.def.TaskDef;
 
+/**
+ * 用于在ResultHandler中添加新任务的中间类
+ * 
+ * @author DragonBoom
+ * @since 2019.10.26
+ */
 public class HttpResultHelper implements ResultHelper {
     private TaskFactory taskFactory;
     private List<Task> newTasks;

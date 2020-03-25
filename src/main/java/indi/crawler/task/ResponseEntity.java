@@ -23,7 +23,7 @@ public class ResponseEntity implements Serializable {
 		String, 
 		ByteArray, 
 		/**
-		 * 文件，将直接把响应实体存放到磁盘的临时文件中
+		 * 文件，将把响应流写到磁盘的临时文件中，可显著减少内存占用
 		 */
 		File
 	}

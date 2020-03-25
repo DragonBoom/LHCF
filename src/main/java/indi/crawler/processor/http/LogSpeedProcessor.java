@@ -1,6 +1,5 @@
 package indi.crawler.processor.http;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 

@@ -1,7 +1,6 @@
 package indi.crawler.processor.http;
 
 import java.net.URI;
-import java.util.Arrays;
 
 import org.apache.http.Header;
 import org.apache.http.HttpResponse;

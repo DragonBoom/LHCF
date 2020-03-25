@@ -1,10 +1,12 @@
 package indi.crawler.thread;
 
+import java.io.Closeable;
 import java.util.LinkedList;
 
+import indi.crawler.monitor.Monitor.MonitorThread;
 import indi.crawler.task.CrawlerController;
 import indi.exception.WrapperException;
-import indi.util.Message;
+import indi.obj.Message;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -15,12 +17,13 @@ import lombok.extern.slf4j.Slf4j;
  *
  */
 @Slf4j
-public class CrawlerThreadPool extends ThreadGroup implements Message {
+public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable {
     private static final String DEFAULT_POOL_NAME = "CrawlerThreadPool";
     private static final int DEFAULT_POOL_SIZE = 10;
     private CrawlerController controller;
     private int size;
     private LinkedList<Thread> threads = new LinkedList<>();
+    private volatile boolean retire = false;// 结束任务的标记 
 
     private void init(CrawlerController controller, String poolName, int size) {
         this.controller = controller;
@@ -28,7 +31,7 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         this.size = size;
         fullPool();
         // 启动线程池监视器
-        new CrawlerThreadPoolMonitorThread().start(); // TODO
+        new CrawlerThreadPoolMonitorThread().startDeamon(controller);
     }
 
     /**
@@ -46,10 +49,8 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         this(controller, DEFAULT_POOL_NAME, DEFAULT_POOL_SIZE);
     }
 
-    private void addNewThread(String name) {
-        CrawlerThread t = new CrawlerThread(this, name);// will set thread group
-        t.start();// add 2 group when start
-        threads.add(t);
+    private CrawlerThread createNewThread(String name) {
+        return new CrawlerThread(this, name);// will set thread group
     }
 
     /**
@@ -58,12 +59,19 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
      * <p> FIXME: 当线程中止运行时，仍会被threads引用...
      */
     public synchronized void fullPool() {
+        if (retire) {
+            log.debug("爬虫已结束，不再更新爬虫线程池");
+            return;
+        }
         int j = 0;
         for (int i = 0; i < size; i++) {
             Thread t = null;
             if (i >= threads.size() || (t = threads.get(i)) == null || !t.isAlive()) {
                 j++;
-                addNewThread("Crawler Thread - " + i);
+                // 是否需要先结束t？ FIXME:
+                t = createNewThread("Crawler Thread - " + i);
+                t.start();// add 2 group when start
+                threads.add(t);
             }
         }
         if (j > 0) {
@@ -71,13 +79,24 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         }
     }
 
-    public void shutdown() {
+    /**
+     * 结束线程池
+     */
+    @Override
+    public void close() {
+        // 标记已关闭，防止再新增线程
+        retire = true;
+        // 先结束线程
         for (Thread thread : threads) {
             CrawlerThread crawlerThread = (CrawlerThread) thread;
+            log.info("开始结束线程{}", crawlerThread);
             crawlerThread.retire();
-            crawlerThread.interrupt();
-            log.info("结束线程{}", crawlerThread);
+            crawlerThread.interrupt();// 用于中断爬虫的不可控状态（通过抛异常）
+            log.info("结束线程{}完成", crawlerThread);
         }
+        // 再结束线程池
+        this.interrupt();
+        log.info("爬虫线程池已结束");
     }
 
     public CrawlerController getController() {
@@ -98,6 +117,11 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
         return count;
     }
     
+    /**
+     * 判断是否所有线程都没在工作
+     * 
+     * @return
+     */
     public boolean isOver() {
         return getWorkingCount() == 0; 
     }
@@ -114,17 +138,17 @@ public class CrawlerThreadPool extends ThreadGroup implements Message {
      * @author DragonBoom
      *
      */
-    public class CrawlerThreadPoolMonitorThread extends Thread {
+    public class CrawlerThreadPoolMonitorThread extends MonitorThread {
         private final Long DEFAULT_SCAN_WAITING = 10000L;
 
         @Override
         public void run() {
-            while (true) {
+            while (!retire) {
                 try {
                     Thread.sleep(DEFAULT_SCAN_WAITING);
                     fullPool();
                 } catch (InterruptedException e) {
-                    throw new WrapperException(e);
+                    throw new WrapperException(e);// warn: will break loop !!
                 }
             }
         }

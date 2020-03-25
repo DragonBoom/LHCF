@@ -2,7 +2,6 @@ package indi.crawler.processor.http;
 
 import java.io.IOException;
 import java.net.URI;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,7 +12,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.http.client.methods.HttpEntityEnclosingRequestBase;
 import org.apache.http.client.methods.HttpRequestBase;
-import org.junit.jupiter.params.shadow.com.univocity.parsers.annotations.Trim;
 
 import com.google.common.io.ByteStreams;
 
@@ -24,15 +22,13 @@ import indi.crawler.task.ResponseEntity;
 import indi.crawler.task.Task;
 import indi.crawler.util.RedisUtils;
 import indi.data.Pair;
-import indi.data.StringObjectRedisCodec;
 import indi.exception.WrapperException;
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 确保不出现阻塞的情况
+ * 基于Redis的请求缓存处理器，确保不出现阻塞的情况
+ * 
+ * <p>2019.10.26 目前存在一个问题，缓存难以处理临时文件的存储方式。redis能否以流的形式操作数据呢？http://blog.huangz.me/2017/redis-streams.html
  * 
  * @author DragonBoom
  *
@@ -78,7 +74,7 @@ public class RedisCacheProcessor extends CacheProcessor {
     }
 
     /**
-     * 检测是否有缓存当前请求，有则不执行其他拦截器
+     * 检测是否有缓存当前请求，有则不执行其他拦截器，不发送请求
      */
     @Override
     public ProcessorResult executeRequestByCache(ProcessorContext iCtx) throws Throwable {
@@ -86,7 +82,7 @@ public class RedisCacheProcessor extends CacheProcessor {
         String field = generateField(ctx);
         if (isCached(field)) {
             log.info("该任务已缓存，不再发送请求 {} {}", ctx.getTaskDef().getName(), ctx.getUri());
-            return ProcessorResult.CONTINUE_STAGE;
+            return ProcessorResult.CONTINUE_STAGE;// 跳过其他拦截器（不需要发送请求）
         } else {
             log.info("该任务尚未缓存，将缓存请求 {} {}", ctx.getTaskDef().getName(), ctx.getUri());
             return ProcessorResult.KEEP_GOING;
@@ -156,21 +152,15 @@ public class RedisCacheProcessor extends CacheProcessor {
     
     @Override
     public ProcessorResult receiveResponseByCache(ProcessorContext iCtx) throws Throwable {
-        // TODO Auto-generated method stub
         Task ctx = iCtx.getCrawlerContext();
         String field = generateField(ctx);
         if (isCached(field)) {
             // 若有缓存该请求，则直接从缓存获取响应
             ResponseEntity responseEntity;
             responseEntity = (ResponseEntity) RedisUtils.getAsyncCommands(redisURI).hget(HKEY, field).get();
-//            redisLock.lock();
-//            try {
-//            } finally {
-//                redisLock.unlock();
-//            }
             
             if (responseEntity != null) {
-                log.info("从Redis缓存中获取数据：{} {}", ctx.getTaskDef().getName(), ctx.getUri());
+                log.info("  从Redis缓存中获取数据：{} {}", ctx.getTaskDef().getName(), ctx.getUri());
                 ctx.setResponseEntity(responseEntity);
                 return ProcessorResult.CONTINUE_STAGE;// stop receive response
             } else {
@@ -188,7 +178,7 @@ public class RedisCacheProcessor extends CacheProcessor {
         String field = generateField(ctx);
         if (!isCached(field)) {
             List<Throwable> throwables = ctx.getThrowables();
-            // 若响应不为空且没有发生过异常，则缓存该请求
+            // 若没有缓存过该请求、响应不为空且没有发生过异常，则缓存该请求实体
             CrawlerStatus status = ctx.getStatus();
             if (ctx.getResponse() != null && (throwables == null || throwables.size() == 0)
                     && (status.equals(CrawlerStatus.FINISHED) || status.equals(CrawlerStatus.RUNNING))) {
@@ -220,14 +210,8 @@ public class RedisCacheProcessor extends CacheProcessor {
             try {
                 isCached = RedisUtils.getAsyncCommands(redisURI).hexists(HKEY, field).get();
             } catch (InterruptedException | ExecutionException e) {
-                // TODO Auto-generated catch block
                 e.printStackTrace();
             }
-//            redisLock.lock();
-//            try {
-//            } finally {
-//                redisLock.unlock();
-//            }
             isFieldCachedThreadLocal.set(Pair.of(field, isCached));
             return isCached;
         }

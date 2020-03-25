@@ -10,6 +10,7 @@ import org.apache.http.HttpHost;
 
 import indi.crawler.cookies.CookieStore;
 import indi.crawler.cookies.MemoryCookieStore;
+import indi.crawler.filter.BlockingWaitFilter;
 import indi.crawler.monitor.CloseableMonitor;
 import indi.crawler.monitor.ContextPoolMonitor;
 import indi.crawler.task.CrawlerController;
@@ -17,6 +18,7 @@ import indi.crawler.task.Task;
 import indi.crawler.task.def.SpecificTask;
 import indi.crawler.task.def.TaskDef;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -35,6 +37,18 @@ public class CrawlerJob {
     private boolean descPriority;
     @Getter
     private String redisURI;
+    @Getter
+    private String tmpFolderPath;// 临时文件夹路径
+    @Getter
+    private Runnable closeCallbackFun;// 结束时的回调（为空则啥也不做）
+    @Getter
+    private BlockingWaitFilter blockingWaitFilter;
+    @Setter
+    @Getter
+    private boolean enableBlkckingWait = false;
+    
+    /** 函数：结束整个系统 */
+    public static final Runnable CLOSE_SYSTEM = () -> System.exit(0);
 
     /**
      * 初始化爬虫项目
@@ -42,6 +56,7 @@ public class CrawlerJob {
     private void init() {
         cookieStore = new MemoryCookieStore();
         tasks = new ConcurrentHashMap<>();
+        blockingWaitFilter = new BlockingWaitFilter();
     }
 
     private CrawlerJob() {
@@ -107,12 +122,19 @@ public class CrawlerJob {
     private static final Long CONTEXT_POOL_MONITOR_SLEEP_MILLIS = 5000L;
 
     /**
-     * 开始本项任务
+     * 从种子URI开始执行本项任务
      * 
      * @return
      */
-    public boolean start(String taskName, String seedUri, String entity) {
-        preStart();
+    public synchronized boolean start(String taskName, String seedUri, String entity) {
+        if (controller == null) {// 这里实际上是CrawlerController唯一的初始逻辑
+            controller = new CrawlerController(this);// 这个其实不太合理。。。
+            new CloseableMonitor(this);// 启用关闭监视器
+            
+            if (enableBlkckingWait) {
+                controller.addFilter(blockingWaitFilter);
+            }
+        }
         seed = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
         controller.offer(seed);
         // clear cache
@@ -121,20 +143,19 @@ public class CrawlerJob {
     }
     
     public boolean start(String taskName, String seedUri) {
-        preStart();
         return start(taskName, seedUri, null);
     }
     
     /**
-     * 启动前执行的逻辑
+     * 添加任务的种子
+     * 
+     * @author DragonBoom
+     * @since 2020.03.25
+     * @param taskName
+     * @param seedUri
+     * @param entity
+     * @return
      */
-    protected synchronized void preStart() {
-        if (controller == null) {
-            controller = new CrawlerController(this);
-            new CloseableMonitor(this);
-        }
-    }
-    
     public boolean addSpecificTask(String taskName, String seedUri, String entity) {
         taskName = Optional.ofNullable(taskName).orElse(tasks.entrySet().iterator().next().getKey());
         Task ctx = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
@@ -149,18 +170,37 @@ public class CrawlerJob {
         return addSpecificTask(null, seedUri, entity);
     }
     
+    /**
+     * 启用爬虫池监视器
+     * 
+     * @author DragonBoom
+     * @since 2020.03.25
+     * @return
+     */
     public CrawlerJob withContextPoolMonitor() {
         new ContextPoolMonitor(this, CONTEXT_POOL_MONITOR_SLEEP_MILLIS);// getter ?
         return this;
     }
     
+    /**
+     * 启用HTTP代理
+     * @author DragonBoom
+     * @since 2020.03.25
+     * @param host
+     * @param port
+     * @return
+     */
     public CrawlerJob withHTTPProxy(String host, int port) {
         this.proxy = new HttpHost(host, port);
         return this;
     }
 
+    /**
+     * 启用关闭爬虫的监视器（现在无论是否调用本方法都会启动该监视器）
+     * 
+     * @return
+     */
     public CrawlerJob withCloseableMonitor() {
-                ; // TODO WARN
         return this;
     }
     
@@ -192,5 +232,26 @@ public class CrawlerJob {
         return this;
     }
     
+    /**
+     * 指定临时文件夹
+     * 
+     * @param pathStr
+     * @return
+     */
+    public CrawlerJob withTmpFolder(String pathStr) {
+        this.tmpFolderPath = pathStr;
+        return this;
+    }
+    
+    /**
+     * 定义结束时的回调
+     * 
+     * @param fun
+     * @return
+     */
+    public CrawlerJob withCloseCallback(Runnable fun) {
+        this.closeCallbackFun = fun;
+        return this;
+    }
 
 }
