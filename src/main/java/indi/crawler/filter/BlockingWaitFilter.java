@@ -9,12 +9,26 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import javax.management.RuntimeErrorException;
+
+import indi.crawler.monitor.Monitor.MonitorThread;
 import indi.crawler.task.CrawlerController;
+import indi.crawler.task.CrawlerStatus;
+import indi.crawler.task.Task;
 import indi.crawler.task.def.TaskDef;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 实现任务的同步阻塞等待。对同一类任务，每隔一段时间后才会执行下一个任务
+ * 实现任务的同步阻塞等待。对同一类任务，每隔一段时间后才会执行下一个任务。通过过滤器的形式实现。
+ * 
+ * <p>以过滤器的形式，在执行任务后计算阻塞时间，在阻塞时间内拒绝执行其他同类任务，会导致爬虫线程不断地重试直至超过阻塞时间，并且
+ * 重试时线程可能因为竞争锁而挂起，实际效率非常低！
+ * 
+ * <p>2020.07.23：
+ * 优化方案：参考ASQ模式，将阻塞任务从爬虫池中取出并保存起来，当经过阻塞时间后再投入爬虫池，避免不断重试。可能需要守护线程来自动将
+ * 爬虫任务投入爬虫池。似乎可将爬虫任务添加到爬虫池的延期处理队列即可，但若需如此，需要一次性为所有爬虫任务计算开始执行时间
+ * 
+ * <p>需要注意爬虫任务阻塞唤醒后仍需经过该拦截器，如何判断爬虫任务曾经阻塞过？暂时靠不拦截已阻塞任务实现
  * 
  * @author wzh
  * @since 2020.03.25
@@ -30,7 +44,7 @@ public class BlockingWaitFilter extends TaskFilter {
     }
     
     /**
-     * 添加任务定义的阻塞策略
+     * 为任务定义添加阻塞策略
      * 
      * @author DragonBoom
      * @since 2020.03.25
@@ -42,41 +56,58 @@ public class BlockingWaitFilter extends TaskFilter {
     }
 
     @Override
-    public boolean isExecute(TaskDef taskDef, Thread thread, CrawlerController controller) {
-        Long bMillis = blockingMillisMap.get(taskDef);
-        if (bMillis == null) {
-            // 不需要阻塞
+    public boolean isExecute(Task task, Thread thread, CrawlerController controller) {
+        if (blockingMillisMap.isEmpty()) {
             return true;
         }
-        // 同步锁，粒度为爬虫定义对象
+        
+        TaskDef taskDef = task.getTaskDef();
+        Long bMillis = blockingMillisMap.get(taskDef);
+        if (bMillis == null) {
+            // 爬虫任务不需要阻塞执行
+            return true;
+        }
+        if (task.getStatus() == CrawlerStatus.BLOCKING_TIME) {
+            // 不拦截已阻塞任务
+            return true;
+        }
+        // 同步锁，粒度为爬虫定义对象，因此可能会多线程执行
         boolean isExecute = true;
         synchronized (taskDef) {
             // 判断是否需要阻塞
             Long next = nextMillisMap.get(taskDef);
             long now = System.currentTimeMillis();
             if (next == null) {
-                // 没有阻塞记录，新增一个，不需要阻塞
-                next = now + bMillis;
-                nextMillisMap.put(taskDef, next);
+                // 该任务定义没有阻塞记录，新增一个；当前任务不需要阻塞
                 log.debug("【阻塞同步过滤器】：初始化任务{}的阻塞记录完成", taskDef.getName());
+                next = now;
             } else {
                 if (next <= now) {
-                    // 可执行时间小于当前时间，不需要阻塞
-                    // 更新阻塞记录
-                    next = now + bMillis;
-                    nextMillisMap.put(taskDef, next);
-                    log.debug("【阻塞同步过滤器】：任务{}已不需要阻塞", taskDef.getName());
+                    // 当前时间已超过可执行时间，不需要阻塞
+                    log.debug("【阻塞同步过滤器】：任务{}不需要阻塞", taskDef.getName());
                 } else {
                     // 尚未抵达下一次可执行时间，需要阻塞
                     log.debug("【阻塞同步过滤器】：任务{}需要阻塞，下一次唤醒时间为：{}", taskDef.getName(),
                             new SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(new Date(next)));
+                    // 2020.07.23
+                    // 将爬虫任务添加至爬虫池的延期队列
+                    task.setStatus(CrawlerStatus.BLOCKING_TIME);
+                    if (!controller.deferral(task, next)) {
+                        throw new RuntimeException("回收阻塞的爬虫任务失败：" + task.getMessage());
+                    }
                     isExecute = false;
-                    
                 }
             }
+            // 添加/更新下一次可执行时间
+            next += bMillis;
+            nextMillisMap.put(taskDef, next);
         }
         
-        return isExecute;
+        return isExecute;// default true
+    }
+    
+    public boolean isEmpty() {
+        return blockingMillisMap.isEmpty();
     }
  
 }

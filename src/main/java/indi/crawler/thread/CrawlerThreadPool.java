@@ -7,11 +7,13 @@ import indi.crawler.monitor.Monitor.MonitorThread;
 import indi.crawler.task.CrawlerController;
 import indi.exception.WrapperException;
 import indi.obj.Message;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 爬虫线程池
- * <p>
+ * 
+ * <p>2020.08.28 注意，该线程池并没有利用到父类ThreadGroup提供的方法！！
  * 
  * @author DragonBoom
  *
@@ -21,14 +23,15 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
     private static final String DEFAULT_POOL_NAME = "CrawlerThreadPool";
     private static final int DEFAULT_POOL_SIZE = 10;
     private CrawlerController controller;
-    private int size;
+    @Getter
+    private int targetSize;
     private LinkedList<Thread> threads = new LinkedList<>();
     private volatile boolean retire = false;// 结束任务的标记 
 
     private void init(CrawlerController controller, String poolName, int size) {
         this.controller = controller;
         controller.setThreadPool(this);
-        this.size = size;
+        this.targetSize = size;
         fullPool();
         // 启动线程池监视器
         new CrawlerThreadPoolMonitorThread().startDeamon(controller);
@@ -63,19 +66,21 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
             log.debug("爬虫已结束，不再更新爬虫线程池");
             return;
         }
-        int j = 0;
-        for (int i = 0; i < size; i++) {
+        int j = 0;// 新增线程数
+        for (int i = 0; i < targetSize; i++) {
             Thread t = null;
+            // 新增条件：线程数量不足 || 线程不存在 || 线程无效
             if (i >= threads.size() || (t = threads.get(i)) == null || !t.isAlive()) {
                 j++;
                 // 是否需要先结束t？ FIXME:
                 t = createNewThread("Crawler Thread - " + i);
-                t.start();// add 2 group when start
+                t.start();
+                // 加入集合
                 threads.add(t);
             }
         }
         if (j > 0) {
-            log.info("已填充爬虫池  [{}/{}]", j, size);
+            log.info("已填充爬虫池  [{}/{}]", j, targetSize);
         }
     }
 
@@ -102,12 +107,8 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
     public CrawlerController getController() {
         return controller;
     }
-
-    public int getSize() {
-        return size;
-    }
     
-    public int getWorkingCount() {
+    public int getWorkingThreadCount() {
         int count = 0;
         for (Thread thread : threads) {
             if (((CrawlerThread) thread).isWorking()) {
@@ -123,7 +124,7 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
      * @return
      */
     public boolean isOver() {
-        return getWorkingCount() == 0; 
+        return getWorkingThreadCount() == 0; 
     }
 
     @Override
@@ -132,6 +133,8 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
         return sb.toString();
     }
 
+    private final Long DEFAULT_SCAN_WAITING = 10000L;
+    
     /**
      * 定时监视线程池，进行补充线程等工作
      * 
@@ -139,18 +142,22 @@ public class CrawlerThreadPool extends ThreadGroup implements Message, Closeable
      *
      */
     public class CrawlerThreadPoolMonitorThread extends MonitorThread {
-        private final Long DEFAULT_SCAN_WAITING = 10000L;
+        
+        
+        private CrawlerThreadPoolMonitorThread() {
+            super(DEFAULT_SCAN_WAITING);
+        }
+
+        private CrawlerThreadPoolMonitorThread(String name, Long sleepMillis) {
+            super(name, sleepMillis);
+            // TODO Auto-generated constructor stub
+        }
+
+
 
         @Override
-        public void run() {
-            while (!retire) {
-                try {
-                    Thread.sleep(DEFAULT_SCAN_WAITING);
-                    fullPool();
-                } catch (InterruptedException e) {
-                    throw new WrapperException(e);// warn: will break loop !!
-                }
-            }
+        public void run0() {
+            fullPool();
         }
     }
 }

@@ -3,6 +3,7 @@ package indi.crawler.task;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.PriorityQueue;
@@ -19,6 +20,7 @@ import indi.crawler.monitor.Monitor.MonitorThread;
 import indi.crawler.recoder.CommonRecorder;
 import indi.crawler.recoder.Recorder;
 import indi.crawler.task.def.TaskDef;
+import indi.exception.WrapperException;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -38,8 +40,10 @@ public class BlockingQueueTaskPool implements TaskPool {
 
     /**
      * 就绪队列，该队列中的爬虫上下文随时可以取出进行处理<br>
+     * 
+     * 注意这个对象(TreeMap)的使用线程不安全，但PriorityBlockingQueue的使用线程安全，因此仅添加队列时需要加锁
      */
-    private TreeMap<TaskDef, PriorityQueue<Task>> availables;
+    private TreeMap<TaskDef, PriorityBlockingQueue<Task>> availables;
     /**
      * 等待队列，任务超时后会离开出租集合，进入该队列；注意该队列按唤醒时间进行排序
      */
@@ -51,8 +55,10 @@ public class BlockingQueueTaskPool implements TaskPool {
     private volatile long recentlyWakeUpRecord;
     /**
      * 已出租爬虫集合
+     * 
+     * <p>此前类型为线程不安全的PriorityQueue，会导致线程安全问题，已更正
      */
-    private PriorityQueue<Task> leaseds;
+    private PriorityBlockingQueue<Task> leaseds;
     
     private Lock recentlyWakeUpLock;
     
@@ -61,17 +67,17 @@ public class BlockingQueueTaskPool implements TaskPool {
 
     
     /**
-     * 之后可以考虑把初始化逻辑解耦出来
+     * 之后可以考虑把初始化逻辑解耦出来 FIXME:
      */
     protected void init() {
         recentlyWakeUpRecord = DEFAULT_RECENTLY_WAKE_UP;
         recentlyWakeUpLock = new ReentrantLock();
         availables = new TreeMap<>();
         deferrals = new PriorityBlockingQueue<>(100, new Task.DeferralContextComparator());
-        deferralRecoverThread = new DeferralRecoverThread(3000L);// per 3 second
+        deferralRecoverThread = new DeferralRecoverThread(100L);
         deferralRecoverThread.startDeamon(controller);
         
-        leaseds = new PriorityQueue<>();
+        leaseds = new PriorityBlockingQueue<>();
         recorder = new CommonRecorder();
         
         filters = new LinkedList<>();
@@ -92,11 +98,13 @@ public class BlockingQueueTaskPool implements TaskPool {
      */
     @Override
     public boolean offer(Task ctx) {
-        // 不处理延期任务
-        if (ctx.getStatus() == CrawlerStatus.DEFERRED) {
-            // 会执行到这一步只可能是逻辑有问题，直接抛异常
-            throw new RuntimeException("尝试新增该延期任务：" + ctx);
-        }
+        Objects.requireNonNull(ctx);
+//        // 不处理延期任务
+        // 暂时用该方法添加延期任务
+//        if (ctx.getStatus() == CrawlerStatus.DEFERRED) {
+//            // 会执行到这一步只可能是逻辑有问题，直接抛异常
+//            throw new RuntimeException("尝试新增该延期任务：" + ctx);
+//        }
         
         // 检查是否有重复记录，若有则不处理 FIXME: 待完善
         TaskDef taskDef = ctx.getTaskDef();
@@ -111,47 +119,48 @@ public class BlockingQueueTaskPool implements TaskPool {
         // 向可用队列添加任务
         // !!! 大坑！对TreeMap而言，仅以比较结果，而不是equals方法判断映射结果
         // 因此，需要保证treeMap的key的比较结果都不同，才能保证key/value间是__映射__关系
-        PriorityQueue<Task> queue = Optional.ofNullable(availables.get(taskDef))
+        PriorityBlockingQueue<Task> queue = Optional.ofNullable(availables.get(taskDef))
                 .orElseGet(() -> {
-                    // 若找不到任务定义对应的阻塞队列，则初始化一个
-                    PriorityQueue<Task> priorityQueue = new PriorityQueue<>();
-                    availables.put(taskDef, priorityQueue);
-                    return priorityQueue;
+                    synchronized (taskDef) {// availables线程不安全，需要加锁，锁的粒度为任务定义
+                        // 若找不到任务定义对应的阻塞队列，则初始化一个
+                        PriorityBlockingQueue<Task> priorityQueue = new PriorityBlockingQueue<>();
+                        availables.put(taskDef, priorityQueue);
+                        return priorityQueue;
+                    }
                 });
         // 插入并返回
         return queue.offer(ctx);
     }
 
     @Override
-    public boolean recover(Task ctx) {
+    public boolean deferral(Task ctx, Long wakeUpTime) {
+        ctx.setWakeUpTime(wakeUpTime);
+        
         // 不处理非延期任务
-        if (ctx.getStatus() != CrawlerStatus.DEFERRED) {
+        CrawlerStatus status = ctx.getStatus();
+        if (status != CrawlerStatus.DEFERRED && status != CrawlerStatus.BLOCKING_TIME) {
             // 会执行到这一步只可能是逻辑有问题，直接抛异常
-            throw new RuntimeException("尝试回收该非延期任务：" + ctx);
+            throw new RuntimeException("尝试回收该非延期任务：" + ctx.getMessage());
         }
-        boolean result = false;
+        
         // 缓存延时任务
-        // a. 尝试更新最近（最小）唤醒时间
-        long millis = ctx.getWakeUpTime();
-        recentlyWakeUpLock.lock();
-        try {
-            if (millis < recentlyWakeUpRecord) {
-                recentlyWakeUpRecord = millis;
+        // a. 尝试更新最近（最小）唤醒时间为更小值
+        if (wakeUpTime < recentlyWakeUpRecord) {
+            recentlyWakeUpLock.lock();
+            try {
+                if (wakeUpTime < recentlyWakeUpRecord) {
+                    recentlyWakeUpRecord = wakeUpTime;
+                }
+            } finally {
+                recentlyWakeUpLock.unlock();
             }
-        } finally {
-            recentlyWakeUpLock.unlock();
         }
-        // b. 从出租集合里移除context
-        boolean haveContext = removeLeased(ctx);
-        if (haveContext) {
-            // c. 若移除成功，则缓存
-            deferrals.offer(ctx);
-            result = true;
-        } else {
-            throw new RuntimeException("尝试非法回收没有出租记录的爬虫任务：" + ctx);
-        }
-    
-        return result;
+        
+        // b. 尝试从出租集合里移除爬虫任务
+        // 可能移除失败（如任务被拦截器拦截，取自可用队列，但尚未添加至出租队列）
+        removeLeased(ctx);
+        // d. 移除成功才缓存，移除失败表明爬虫任务来源不明，无法处理
+        return deferrals.offer(ctx);
     }
 
     @Override
@@ -174,38 +183,42 @@ public class BlockingQueueTaskPool implements TaskPool {
      * @since 2020.03.25
      * @param availables
      */
-    private Task getAvailableTask(TreeMap<TaskDef, PriorityQueue<Task>> availables) {
+    private Task getAvailableTask(TreeMap<TaskDef, PriorityBlockingQueue<Task>> availables) {
         Task ctx = null;
-        // 按任务定义的优先级，取出状态-任务的映射
-        for (Entry<TaskDef, PriorityQueue<Task>> entry : availables.entrySet()) {
-            TaskDef taskDef = entry.getKey();
+        // 按任务定义的优先级，取出任务队列
+        for (Entry<TaskDef, PriorityBlockingQueue<Task>> entry : availables.entrySet()) {
+            PriorityBlockingQueue<Task> queue = entry.getValue();
             
-            // 进行过滤器的是否执行的判断
-            boolean isExecute = true;
-            if (filters != null && filters.size() > 0) {
-                for (TaskFilter filter : filters) {
-                    isExecute = filter.isExecute(taskDef, Thread.currentThread(), controller);
-                    if (!isExecute) {
-                        break;// 不执行，跳过该任务定义；注意这里只是结束对过滤器的遍历
+            // 从队列，按优先级取出爬虫任务
+            // 由于PriorityBlockingQueue是线程安全的，以下逻辑，每个线程操作的ctx应该各不相同，不会冲突
+            while (true) {
+                ctx = queue.poll();
+                if (ctx != null) {
+                    boolean isExecute = true;
+                    // 调用过滤器，判断是否继续执行该任务
+                    if (filters != null) {
+                        // for-for循环性能较差，后续考虑优化 FIXME:
+                        for (TaskFilter filter : filters) {
+                            isExecute = filter.isExecute(ctx, Thread.currentThread(), controller);
+                            if (!isExecute) {
+                                // 一旦有过滤器判断不予执行，就结束遍历过滤器
+                                break;
+                            }
+                        }
                     }
+                    if (isExecute) {
+                        // 爬虫可执行，结束循环
+                        break;
+                    }
+                    // 爬虫不可执行，继续循环获取爬虫任务（抛弃不可执行爬虫）
+                } else {
+                    // 队列为空，结束循环
+                    break;
                 }
             }
-            if (!isExecute) {
-                continue;// 不执行，跳过该任务定义
-            }
-            PriorityQueue<Task> queue = entry.getValue();
-            
-            // 再按上下文优先级取出上下文
-            ctx = queue.poll();
+            // 若获取到任务，结束遍历任务定义；否则继续尝试获取低级任务定义的任务
             if (ctx != null) {
                 break;
-            }
-            
-            // 执行过滤器的预处理
-            if (filters != null && filters.size() > 0) {
-                for (TaskFilter filter : filters) {
-                    ctx = filter.preHandle(ctx, Thread.currentThread());
-                }
             }
         }
         return ctx;
@@ -234,6 +247,7 @@ public class BlockingQueueTaskPool implements TaskPool {
      */
     @Override
     public boolean removeLeased(Task ctx) {
+        Objects.requireNonNull(ctx);
         // 从出租队列移除爬虫
         boolean result = false;
         result = leaseds.remove(ctx);
@@ -248,7 +262,7 @@ public class BlockingQueueTaskPool implements TaskPool {
     @Override
     public int availableSize() {
         int size = 0;
-        for (Entry<TaskDef, PriorityQueue<Task>> e : availables.entrySet()) {
+        for (Entry<TaskDef, PriorityBlockingQueue<Task>> e : availables.entrySet()) {
             // 累加每种任务定义的可用任务数
             size += e.getValue().size();
         }
@@ -269,8 +283,8 @@ public class BlockingQueueTaskPool implements TaskPool {
         StringBuilder sb = new StringBuilder();
         sb.append("availables--");
         // 遍历每个任务定义
-        for (Entry<TaskDef, PriorityQueue<Task>> e : availables.entrySet()) {
-            PriorityQueue<Task> tasks = e.getValue();
+        for (Entry<TaskDef, PriorityBlockingQueue<Task>> e : availables.entrySet()) {
+            PriorityBlockingQueue<Task> tasks = e.getValue();
             // 遍历每个任务状态
             int queueSize = tasks.size();
             if (queueSize > 0) {
@@ -299,55 +313,60 @@ public class BlockingQueueTaskPool implements TaskPool {
      * @since 2020.03.25
      */
     private class DeferralRecoverThread extends MonitorThread {
-        private Long millis;
-        
+
+        /**
+         * 
+         * @param millis 遍历超时队列的时间，由于每次只出队一个任务，该参数决定了唤醒的最高频率，因此必须尽可能的小
+         */
         public DeferralRecoverThread(Long millis) {
-            this.millis = millis;
+            super("DeferralRecoverThread", millis);
+            log.info("init DeferralRecoverThread: {} millis", millis);
         }
         
         @Override
-        public void run() {
-            while (retire) {
-                try {
-                    TimeUnit.MILLISECONDS.sleep(millis);
-                } catch (InterruptedException e) {
-                    // TODO Auto-generated catch block
-                    e.printStackTrace();
-                }
+        public void run0() {
+            while (!retire) {
                 long now = System.currentTimeMillis();
-                if (deferrals.size() > 0 && now > recentlyWakeUpRecord) {
-                    // 取出第一个任务（即唤醒时间最小的任务）
-                    Task ctx = deferrals.poll();
-                    if (ctx != null) {
-                        // 判断是否需要将任务放回延期队列
-                        long wt = ctx.getWakeUpTime();
-                        if (wt > now) {
-                            // 若任务还没有超时，将取出的任务归还
-                            // 注意，这里将按唤醒时间重新排序
-                            deferrals.add(ctx);
-                            ctx = null;
-                            wt = now;
-                        } else {
-                            // 任务已超时,ctx不为null
-                        }
-                        // 若实际的最近唤醒时间大于缓存的记录，则更新
-                        if (wt > recentlyWakeUpRecord) {
-                            recentlyWakeUpLock.lock();
-                            try {
-                                if (wt > recentlyWakeUpRecord) {
-                                    recentlyWakeUpRecord = wt;
-                                }
-                            } finally {
-                                recentlyWakeUpLock.unlock();
-                            }
-                        }
+                if (now > recentlyWakeUpRecord && deferrals.size() > 0) {
+                    // 将等待队列中所有超过唤醒时间的任务出队
+                    Task firstTask = deferrals.peek();
+                    Long wt = Optional.ofNullable(firstTask).map(Task::getWakeUpTime).orElse(null);
+                    // 注意：这里并发执行时有线程安全问题：如果同时有多个线程出队，会导致超前出队
+                    // 因为实际只有一个线程在执行，因此目前没有问题
+                    while (firstTask != null && wt < now) {
+                        Task task = deferrals.poll();// 该任务不一定等于firstTask，但唤醒时间一定小于等于firstTask
+                        offer(task);
+                        log.info("【DeferralRecoverThread】：唤醒爬虫任务：{}", task.getMessage());
+                        
+                        // 处理下一个任务
+                        firstTask = deferrals.peek();
+                        wt = Optional.ofNullable(firstTask).map(Task::getWakeUpTime).orElse(null);
                     }
-                    
-                    if (ctx != null) {
-                        // 不需要将任务放回延期队列，将任务添加至可用队列
-                        log.info("【DeferralRecoverThread】：回收爬虫任务：{}", ctx);
-                        offer(ctx);
+                    updateRecentlyWakeUpRecord(wt);
+                }
+            }
+        }
+        
+        /**
+         * 更新最近唤醒时间为更大值
+         * 
+         * @author DragonBoom
+         * @since 2020.07.23
+         * @param nextWakeUpTime
+         */
+        private void updateRecentlyWakeUpRecord(Long nextWakeUpTime) {
+            if (nextWakeUpTime == null) {
+                return;
+            }
+            
+            if (nextWakeUpTime > recentlyWakeUpRecord) {
+                recentlyWakeUpLock.lock();
+                try {
+                    if (nextWakeUpTime > recentlyWakeUpRecord) {
+                        recentlyWakeUpRecord = nextWakeUpTime;
                     }
+                } finally {
+                    recentlyWakeUpLock.unlock();
                 }
             }
         }

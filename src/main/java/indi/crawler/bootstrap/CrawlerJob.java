@@ -1,11 +1,13 @@
 package indi.crawler.bootstrap;
 
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
+import org.apache.http.HttpEntity;
 import org.apache.http.HttpHost;
 
 import indi.crawler.cookies.CookieStore;
@@ -13,12 +15,13 @@ import indi.crawler.cookies.MemoryCookieStore;
 import indi.crawler.filter.BlockingWaitFilter;
 import indi.crawler.monitor.CloseableMonitor;
 import indi.crawler.monitor.ContextPoolMonitor;
+import indi.crawler.processor.Processor;
+import indi.crawler.processor.http.LogSpeedProcessor;
 import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
 import indi.crawler.task.def.SpecificTask;
 import indi.crawler.task.def.TaskDef;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -43,20 +46,16 @@ public class CrawlerJob {
     private Runnable closeCallbackFun;// 结束时的回调（为空则啥也不做）
     @Getter
     private BlockingWaitFilter blockingWaitFilter;
-    @Setter
     @Getter
-    private boolean enableBlkckingWait = false;
-    
-    /** 函数：结束整个系统 */
-    public static final Runnable CLOSE_SYSTEM = () -> System.exit(0);
+    private List<Processor> customProcessors = new LinkedList<>();// 用户配置的工程级别拦截器
 
     /**
      * 初始化爬虫项目
      */
     private void init() {
+        blockingWaitFilter = new BlockingWaitFilter();
         cookieStore = new MemoryCookieStore();
         tasks = new ConcurrentHashMap<>();
-        blockingWaitFilter = new BlockingWaitFilter();
     }
 
     private CrawlerJob() {
@@ -122,52 +121,57 @@ public class CrawlerJob {
     private static final Long CONTEXT_POOL_MONITOR_SLEEP_MILLIS = 5000L;
 
     /**
-     * 从种子URI开始执行本项任务
+     * 从种子URL开始执行本项任务；直接通过锁对象来保证线程安全
+     * 
+     * <p>这里的各实例都存在解耦的空间，后续考虑进行优化 FIXME:
      * 
      * @return
      */
-    public synchronized boolean start(String taskName, String seedUri, String entity) {
+    public synchronized boolean start(String taskName, String url, HttpEntity requestEntity) {
         if (controller == null) {// 这里实际上是CrawlerController唯一的初始逻辑
             controller = new CrawlerController(this);// 这个其实不太合理。。。
-            new CloseableMonitor(this);// 启用关闭监视器
+            new CloseableMonitor(this);// 启用结束监视器
             
-            if (enableBlkckingWait) {
-                controller.addFilter(blockingWaitFilter);
+            if (!blockingWaitFilter.isEmpty()) {
+                controller.addFilter(blockingWaitFilter);// 启动阻塞过滤器
             }
         }
-        seed = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
+        seed = new SpecificTask(taskName, url, requestEntity).toCrawlerContext(controller);
         controller.offer(seed);
         // clear cache
         priorityCache = null;
         return true;
     }
     
-    public boolean start(String taskName, String seedUri) {
-        return start(taskName, seedUri, null);
-    }
-    
     /**
-     * 添加任务的种子
+     * 从特定URL开始执行爬虫工程
      * 
-     * @author DragonBoom
-     * @since 2020.03.25
      * @param taskName
-     * @param seedUri
+     * @param url
      * @param entity
      * @return
      */
-    public boolean addSpecificTask(String taskName, String seedUri, String entity) {
+    public boolean start(String taskName, String url) {
+        return start(taskName, url, (HttpEntity) null);
+    }
+    
+    /**
+     * 添加作用于指定URL的任务
+     * 
+     * @param taskName
+     * @param url
+     * @param entity
+     * @return
+     * @since 2020.03.25
+     */
+    public boolean addSpecificTask(String taskName, String url, HttpEntity requestEntity) {
         taskName = Optional.ofNullable(taskName).orElse(tasks.entrySet().iterator().next().getKey());
-        Task ctx = new SpecificTask(taskName, seedUri, entity).toCrawlerContext(controller);
+        Task ctx = new SpecificTask(taskName, url, requestEntity).toCrawlerContext(controller);
         return controller.offer(ctx);
     }
     
     public boolean addSpecificTask(String seedUri) {
         return addSpecificTask(null, seedUri, null);
-    }
-    
-    public boolean addSpecificTask(String seedUri, String entity) {
-        return addSpecificTask(null, seedUri, entity);
     }
     
     /**
@@ -222,7 +226,7 @@ public class CrawlerJob {
     }
     
     /**
-     * 使用redis消息队列作为爬虫任务池
+     * 使用redis消息队列作为爬虫任务池。该方法仅设置redisURI，不会直接启用redis爬虫池
      * 
      * @param redisURI
      * @return
@@ -251,6 +255,11 @@ public class CrawlerJob {
      */
     public CrawlerJob withCloseCallback(Runnable fun) {
         this.closeCallbackFun = fun;
+        return this;
+    }
+    
+    public CrawlerJob withSpeedLog() {
+        customProcessors.add(new LogSpeedProcessor());
         return this;
     }
 

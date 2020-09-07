@@ -25,6 +25,7 @@ public class ProcessorChain {
     private ExceptionHandler exceptionHandler;
 
     private ConcurrentHashMap<TaskType, ProcessorExecutor> executorMap = new ConcurrentHashMap<>();
+    private CrawlerController controller;
 
     private void init(CrawlerController controller) {
         exceptionHandler = new BasicExceptionHandler();// TODO
@@ -33,6 +34,7 @@ public class ProcessorChain {
     }
 
     public ProcessorChain(CrawlerController controller) {
+        this.controller = controller;
         init(controller);
     }
 
@@ -68,14 +70,21 @@ public class ProcessorChain {
             return processors;
         }
         
-        List<Processor> customInterceptors = task.getCustomProcessors();
-        processors = new ArrayList<>(customInterceptors.size() + 1);// + 1 for connection processor
+        // 1. 添加自定义处理器
+        List<Processor> taskProcessor = task.getCustomProcessors();
+        List<Processor> jobProcessor = controller.getJob().getCustomProcessors();
 
+        processors = new ArrayList<>(taskProcessor.size() + jobProcessor.size() + 1);// + 1 for connection processor
+        // 先添加任务级别，再添加工程级别的处理器
+        processors.addAll(taskProcessor);
+        processors.addAll(jobProcessor);
+
+        // 2. 添加连接处理器到List末端
+        // 获取处理器的执行者
         ProcessorExecutor executor = getExecutor(task);
-        Processor connectionProcessor = executor.getConnectionProcessor();// 获取处理连接的处理器，将其放到执行链的末端
-        // 添加自定义处理器
-        processors.addAll(customInterceptors);
-        // 添加连接处理器到List末端
+        // 获取处理连接的处理器
+        Processor connectionProcessor = executor.getConnectionProcessor();
+        // 将其放到执行链的末端
         processors.add(connectionProcessor);
 
         // 构建处理器链

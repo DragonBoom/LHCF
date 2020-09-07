@@ -5,6 +5,8 @@ import java.net.URISyntaxException;
 import java.util.Objects;
 import java.util.Optional;
 
+import org.apache.http.HttpEntity;
+
 import indi.crawler.task.CrawlerController;
 import indi.crawler.task.Task;
 import indi.obj.Cleanupable;
@@ -18,9 +20,9 @@ import indi.obj.Cleanupable;
 public class SpecificTask implements Cleanupable {
 	private String taskName;
 	private URI uri;
-	private String entity;
+	private HttpEntity requestEntity;
 
-	public SpecificTask(String taskName, String uri, String entity) {
+	public SpecificTask(String taskName, String uri, HttpEntity requestEntity) {
 		this.taskName = Optional.of(taskName).get();
 		Objects.requireNonNull(uri);
 		try {
@@ -28,7 +30,7 @@ public class SpecificTask implements Cleanupable {
 		} catch (URISyntaxException e) {
 			e.printStackTrace();
 		}
-		this.entity = entity;
+		this.requestEntity = requestEntity;
 	}
 
 	public String getTaskName() {
@@ -43,13 +45,13 @@ public class SpecificTask implements Cleanupable {
 	public void cleanup() {
 		taskName = null;
 		uri = null;
-		entity = null;
+		requestEntity = null;
 	}
 
 	public Task toCrawlerContext(CrawlerController controller) {
 		TaskDef task = controller.getJob().getTaskDef(taskName);
 		Objects.requireNonNull(task);
-		return controller.getTaskFactory().build(task, uri, entity);
+		return controller.getTaskFactory().build(task, uri, requestEntity);
 	}
 
 }

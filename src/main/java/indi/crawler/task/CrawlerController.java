@@ -93,13 +93,14 @@ public class CrawlerController {
     }
     
     /**
-     * 回收爬虫，将回收的功能从offer方法拆出来，提高可读性
+     * 回收并延期执行爬虫
      * 
      * @param ctx
+     * @param wakeUpTime 唤醒时间，毫秒
      * @return
      */
-    public boolean recover(Task ctx) {
-        return taskPool.recover(ctx);
+    public boolean deferral(Task ctx, Long wakeUpTime) {
+        return taskPool.deferral(ctx, wakeUpTime);
 
     }
     
@@ -128,10 +129,10 @@ public class CrawlerController {
      */
     public void close() {
         log.info("开始强制结束爬虫任务");
-        // 关闭线程池
-        threadPool.close();
         // 结束守护线程
         retireMonitorThreads();
+        // 关闭线程池
+        threadPool.close();
         log.info("结束强制爬虫任务完成");
     }
     

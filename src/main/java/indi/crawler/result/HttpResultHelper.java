@@ -4,6 +4,8 @@ import java.net.URI;
 import java.util.LinkedList;
 import java.util.List;
 
+import org.apache.http.HttpEntity;
+
 import indi.crawler.task.Task;
 import indi.crawler.task.TaskFactory;
 
@@ -32,8 +34,16 @@ public class HttpResultHelper implements ResultHelper {
     }
 
     @Override
-    public void addNewTask(String taskName, String uri, String requestEntity) {
+    @Deprecated
+    public void addNewTask(String taskName, String uri, String stringContent) {
+        Task newTask = taskFactory.build(taskName, URI.create(uri), stringContent);
+        newTasks.add(newTask);
+    }
+    
+    @Override
+    public void addNewTask(String taskName, String uri, HttpEntity requestEntity, Object arg) {
         Task newTask = taskFactory.build(taskName, URI.create(uri), requestEntity);
+        newTask.setArg(arg);
         newTasks.add(newTask);
     }
 
@@ -41,5 +51,4 @@ public class HttpResultHelper implements ResultHelper {
     public List<Task> getNewTasks() {
         return newTasks;
     }
-
 }

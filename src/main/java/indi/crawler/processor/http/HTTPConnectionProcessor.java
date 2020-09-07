@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.channels.Channels;
+import java.nio.charset.Charset;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -17,6 +18,8 @@ import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpRequestBase;
 import org.apache.http.impl.client.HttpClientBuilder;
 import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
+import org.apache.http.protocol.BasicHttpContext;
+import org.apache.http.protocol.HttpContext;
 import org.apache.http.util.EntityUtils;
 
 import indi.crawler.processor.ProcessorContext;
@@ -40,7 +43,6 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class HTTPConnectionProcessor extends HTTPProcessor {
-    private static final String DEFAULT_CHARSET = "utf-8";
     private static final int DEFAULT_MAX_ROUTE = Integer.MAX_VALUE;
     private static final int DEFAULT_MAX_PER_ROUTE = Integer.MAX_VALUE;
     private HttpClient client;
@@ -57,48 +59,52 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
         PoolingHttpClientConnectionManager manager = new PoolingHttpClientConnectionManager();
         manager.setMaxTotal(DEFAULT_MAX_ROUTE); // TODO
         manager.setDefaultMaxPerRoute(DEFAULT_MAX_PER_ROUTE); // TODO
-        client = HttpClientBuilder.create().setConnectionManager(manager).build();
+        client = HttpClientBuilder.create()
+                // 默认会根据状态码(301)，对GET/HEAD请求进行重定向，可见：DefaultRedirectStrategy
+//                .setRedirectStrategy(redirectStrategy)
+                .setConnectionManager(manager).build();
     }
 
     @Override
     protected ProcessorResult executeRequest0(ProcessorContext pCtx) throws Exception {
-        Task ctx = pCtx.getCrawlerContext();
-        TaskDef taskDef = ctx.getTaskDef();
+        Task task = pCtx.getCrawlerContext();
+        TaskDef taskDef = task.getTaskDef();
         Function<String, Boolean> checkFun = taskDef.getCheckFun();
         if (checkFun != null) {
             // 检测是否要执行当前任务，若不需要，则通过线程类的方法使线程直接跳过该任务，继续处理其他任务
-            Boolean checkAccept = checkFun.apply(ctx.getUri().toString());
+            Boolean checkAccept = checkFun.apply(task.getUri().toString());
             if (!checkAccept) {
                 CrawlerThread currentThread = (CrawlerThread) Thread.currentThread();
                 currentThread.completeCurrentTask();
             }
         }
         
-        HttpRequestBase request = ctx.getRequest();
+        HttpRequestBase request = task.getRequest();
         HttpResponse response = null;
-        HttpHost host = ctx.getHost();// TODO
-        if (host == null)
-            response = client.execute(request);
-        else
-            response = client.execute(host, request);
-        ctx.setResponse(response);
+        
+        HttpContext context = new BasicHttpContext();
+        
+        response = client.execute(request, context);
+        
+        task.setResponse(response);
+        task.setHttpContext(context);
         return ProcessorResult.CONTINUE_STAGE;
     }
     
     @Override
     protected ProcessorResult receiveResponse0(ProcessorContext pCtx) throws Exception {
-        Task ctx = pCtx.getCrawlerContext();
-        TaskDef taskDef = ctx.getTaskDef();
+        Task task = pCtx.getCrawlerContext();
+        TaskDef taskDef = task.getTaskDef();
 
-        String charset = null;
-        // TODO
-        charset = Optional.ofNullable(charset).orElse(DEFAULT_CHARSET);
-        HttpResponse response = ctx.getResponse();
+        Charset charset = taskDef.getResultStringCharset();
+        // TODO 可配
+        charset = Optional.ofNullable(charset).orElse(Charset.defaultCharset());
+        HttpResponse response = task.getResponse();
         HttpEntity httpEntity = response.getEntity();
         // when gzip
 //        GzipDecompressingEntity gzipDecompressingEntity = new GzipDecompressingEntity(entity);
 //        gzipDecompressingEntity.getContent();
-        ResponseEntity responseEntity = ctx.getResponseEntity();
+        ResponseEntity responseEntity = task.getResponseEntity();
         
         Object resultV = null;
         TYPE type = responseEntity.getType();
@@ -114,8 +120,10 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
         case File:// 将响应流写入临时文件中，可显著减少内存占用
             // generate tmp file
             // 临时文件的存放目录，优先取任务定义的路径，若没有，再取整个爬虫项目的路径，若也没有，则取默认路径
-            File tmpFile = FileUtils.createTmpFile(Optional.ofNullable(taskDef.getTmpDir())
-                    .orElse(Optional.ofNullable(controller.getJob().getTmpFolderPath()).orElse(null)));
+            String tempDir = Optional.ofNullable(taskDef.getTmpDir())
+                    .orElse(Optional.ofNullable(controller.getJob().getTmpFolderPath()).orElse(null));
+            Objects.requireNonNull(tempDir, "下载类型为文件时，必须指定缓存地址！");
+            File tmpFile = FileUtils.createTmpFile(tempDir);
             // 将响应流写入临时文件
             try (FileOutputStream outStream = new FileOutputStream(tmpFile);
                     InputStream inStream = httpEntity.getContent();) {
@@ -135,14 +143,14 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
 
     @Override
     protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Exception {
-        Task ctx = pCtx.getCrawlerContext();
+        Task task = pCtx.getCrawlerContext();
         
-        ResultHandler handler = ctx.getTaskDef().getResultHandler();
+        ResultHandler handler = task.getTaskDef().getResultHandler();
         HttpResultHelper resultHelper = new HttpResultHelper(controller.getTaskFactory());
         
-        handler.process(ctx, resultHelper);
+        handler.process(task, resultHelper);
         List<Task> newTasks = resultHelper.getNewTasks();
-        ctx.setChilds(newTasks);
+        task.setChilds(newTasks);
         return ProcessorResult.CONTINUE_STAGE;
     }
     
@@ -151,17 +159,17 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
      */
     @Override
     protected ProcessorResult afterHandleResult0(ProcessorContext pCtx) throws Exception {
-        Task ctx = pCtx.getCrawlerContext();
-        List<Task> tasks = ctx.getChilds();
+        Task task = pCtx.getCrawlerContext();
+        List<Task> tasks = task.getChilds();
         if (tasks != null) {
             Iterator<Task> i = tasks.iterator();
-            CrawlerController controller = ctx.getController();
+            CrawlerController controller = task.getController();
             while (i.hasNext()) {
                 if (!controller.offer(i.next())) {
                     i.remove(); // 若无法存入上下文池（重复任务），则将其移除
                 }
             }
-            ctx.setChilds(tasks);
+            task.setChilds(tasks);
         }
         return ProcessorResult.CONTINUE_STAGE;
     }

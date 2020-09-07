@@ -9,13 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import javax.jws.HandlerChain;
-
 import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.methods.HttpRequestBase;
+import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.RedirectLocations;
+import org.apache.http.protocol.HttpContext;
 
 import indi.bean.BeanUtils;
 import indi.crawler.task.def.TaskDef;
@@ -52,9 +52,9 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
      * 反序列化时通过这个属性找到TaskDef
      */
     private String taskDefName;
-    
+
+    @Deprecated
     private String requestEntityStr;
-    
     
     private transient CrawlerController controller;
 
@@ -90,8 +90,7 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
     // HTTP请求部分
     private transient HttpRequestBase request;
     private transient HttpEntity requestEntity;
-    // HTTP proxy
-    private transient HttpHost host;
+    private transient HttpContext httpContext;
     // HTTP响应部分
     private transient HttpResponse response;
     // HTTP响应实体，懒加载
@@ -99,6 +98,20 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
     // 由本Context产生的子任务
     private transient List<Task> childs;
     private String identityKey;// 身份编码
+    private Object arg;// 传递用参数
+    
+    /**
+     * 获取重定向的地址集合；该地址集合按重定向顺序存放URI
+     * 
+     * @author DragonBoom
+     * @since 2020.09.04
+     */
+    public RedirectLocations getRedirectLocations() {
+        if (httpContext == null) {
+            throw new RuntimeException("无法获取到httpContext，可能尚未执行请求");
+        }
+        return (RedirectLocations) httpContext.getAttribute(HttpClientContext.REDIRECT_LOCATIONS);
+    }
 
     @Override
     public void cleanup() {
@@ -112,6 +125,9 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
 
     @Override
     public int compareTo(Task o) {
+        if (o == null) {
+            throw new NullPointerException("传入对象为null，无法进行比较");
+        }
         return o.getPriority() - this.priority; // TreeMap 取值时优先取小值！！
     }
 
@@ -153,11 +169,12 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
 
     @Override
     public String getMessage() {
-        return new StringBuilder(uri.toString())
-                .append(", taskName:").append(getTaskDef().getName())
+        return new StringBuilder("taskName:")
+                .append(getTaskDef().getName())
                 .append(", status:").append(getStatus())
                 .append(", exceptions:").append(getThrowables())
                 .append(", attemptCounts:").append(getAttempts())
+                .append(", uri.toString()")
                 .toString();
     }
 }

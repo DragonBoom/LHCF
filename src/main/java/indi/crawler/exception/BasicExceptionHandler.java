@@ -101,11 +101,10 @@ public class BasicExceptionHandler implements ExceptionHandler {
                 // 等待时间 = context的等待时间 + 额外等待时间
                 long additionalWaitMillis =  attempts / totalCounts
                         * DEFAULT_ADDITIONAL_WAIT_MAX_MILLIS;// 额外等待时间:根据任务重试次数计算，尝试越多次，等待越久
-                ctx.setWakeUpTime(System.currentTimeMillis() + ctx.getRetryDeferrals()
-                        + additionalWaitMillis);
+                long wakeUpTime = System.currentTimeMillis() + ctx.getRetryDeferrals() + additionalWaitMillis;
                 ctx.setPriority(ctx.getTaskDef().getPriority() + ctx.getPriority());
-                log.info("回收{}爬虫(第 {} / {} 次)：{}", ctx.getTaskDef().getName(), ctx.getAttempts(), ctx.getMaxRetries(), ctx);
-                ctx.getController().recover(ctx);
+                log.info("回收{}爬虫(第 {} / {} 次)：{}", ctx.getTaskDef().getName(), ctx.getAttempts(), ctx.getMaxRetries(), ctx.getMessage());
+                ctx.getController().deferral(ctx, wakeUpTime);
                 return;
             } else {
                 // 超过了最大重试次数，则标记任务无法完成，等待被回收

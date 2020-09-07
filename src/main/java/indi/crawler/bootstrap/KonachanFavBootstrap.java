@@ -2,16 +2,14 @@ package indi.crawler.bootstrap;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -26,6 +24,7 @@ import indi.crawler.result.ResultHandler;
 import indi.crawler.result.ResultHelper;
 import indi.crawler.task.ResponseEntity.TYPE;
 import indi.crawler.task.Task;
+import indi.crawler.util.JobUtils;
 import indi.crawler.util.RedisUtils;
 import indi.exception.WrapperException;
 import indi.io.FileUtils;
@@ -137,7 +136,7 @@ public class KonachanFavBootstrap {
         clearEmptyDownloadedPic();
         
         // 刷新已下载记录缓存
-        refreshDownloaded();
+        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);;
         
         log.info("初始化 {} 完成", this.getClass().getSimpleName());
     }
@@ -147,44 +146,20 @@ public class KonachanFavBootstrap {
      */
     private void clearEmptyDownloadedPic() {
         log.info("正在清理空文件...");
-        try {
-            Files.newDirectoryStream(downloadPath)
-                    .forEach(p -> {
-                        try {
-                            if (Files.size(p) == 0) {
-                                if (FileUtils.isImage(p)) {
-                                    Files.delete(p);
-                                }
-                            }
-                        } catch (IOException e) {
-                            throw new WrapperException(e);
-                        }
-                    });
-        } catch (IOException e) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(downloadPath)) {
+            stream.forEach(p -> {
+                try {
+                    if (Files.size(p) == 0) {
+                        Files.delete(p);
+                    }
+                } catch (IOException e) {
+                    throw new WrapperException(e);
+                }
+            });
+        } catch (Exception e) {
             throw new WrapperException(e);
         }
         log.info("清理空文件完成");
-    }
-    
-    /**
-     * 刷新本地图片序号的缓存
-     */
-    private void refreshDownloaded() {
-        log.info("刷新本地图片序号缓存。。。");
-        DOWNLOADED_CODES.clear();
-        // 缓存已下载的图片序号
-        try {
-            Files.newDirectoryStream(downloadPath)
-                    .forEach(p -> Optional.ofNullable(p)
-                            // 过滤掉非图片文件
-                            .filter(FileUtils::isImage)
-                            .ifPresent(picPath -> {
-                                DOWNLOADED_CODES.add(FileUtils.getFileName(picPath));
-                            }));
-        } catch (IOException e) {
-            throw new WrapperException(e);
-        }
-        log.info("刷新本地图片序号缓存完成");
     }
     
     /**
@@ -358,7 +333,7 @@ public class KonachanFavBootstrap {
     public void run(String... args) throws IOException {
         String favUrl = args[0];
         // 刷新本地图片序号的缓存
-        refreshDownloaded();
+        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);
         
 //        FileUtils.clearDirectory(path);
 //        log.info("清空目录");
@@ -368,6 +343,8 @@ public class KonachanFavBootstrap {
 
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "");// 启用HTTPS代理
         job = CrawlerJob.build()
+                // 输出下载速度等信息
+                .withSpeedLog()
                 // 定义结束回调
                 .withCloseCallback(() -> {
                     // 删除线上没有记录（即取消收藏）的文件
@@ -436,7 +413,7 @@ public class KonachanFavBootstrap {
                     .withResultHandler(listPageResultHandler)
                     .withLogDetail()
                     .withKeepReceiveCookie()
-                    .withBlockingMillis(3000L)// 每10s执行一次
+                    .withBlockingMillis(10000L)// 每10s处理一个收藏夹页面
                     .and();
                 /*
                  * 启动项目。由于启动时建立了线程池，该方法执行完成后不会导致main方法结束
@@ -486,44 +463,13 @@ public class KonachanFavBootstrap {
     }
     
     /**
-     * 删除不存在于已下载记录中的本地图片，必须在下载完成后调用
+     * 删除不存在于已下载记录中的本地图片，在下载完成后调用
      * 
      * @throws IOException
      */
     protected void deleteNoRecord() throws IOException {
-        log.info("开始移除没有线上记录的文件");
-        // 读取本次下载的图片序号
-        Set<String> onlineCodes = ONLINE_CODES;// 线上存在的图片序号集合
-        if (ONLINE_CODES.size() == 0) {
-            throw new IllegalAccessError("线上下载记录为空，推测没有记录下载内容或没有下载，无法移除没有下载的文件");
-        }
-        
-        // 已下载 - 线上记录 = 已下载且线上没记录
-        HashSet<String> deleteCodes = new HashSet<>();
-        deleteCodes.addAll(DOWNLOADED_CODES);
-        deleteCodes.removeAll(onlineCodes);
-        
-        if (deleteCodes.size() == 0) {
-            log.info("所有文件均有记录，无需移除");
-            return;
-        }
-        
-        // 删除 已下载且线上没记录 的图片
-        // a. 构建 code -> Path 的映射
-        Map<String, Path> codePathMap = new HashMap<>();
-        Files.newDirectoryStream(downloadPath)
-            .forEach(p -> {
-                String fileName = FileUtils.getFileName(p.toString());
-                codePathMap.put(fileName, p);
-            });
-        // b. 逐个删除文件
-        for (String code : deleteCodes) {
-            Path deletePath = codePathMap.get(code);
-            log.info("删除线上已移除的文件：{}", deletePath);
-            Files.delete(deletePath);
-        }
-        // 更新已下载记录
-        refreshDownloaded();
-        log.info("移除没有下载记录的文件完成");
+        JobUtils.delNoRecordFiles(ONLINE_CODES, DOWNLOADED_CODES, downloadPath);
+        // 更新已下载记录的缓存
+        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);
     }
 }

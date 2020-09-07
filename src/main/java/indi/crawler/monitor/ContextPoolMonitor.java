@@ -27,23 +27,14 @@ public class ContextPoolMonitor extends Monitor {
 	}
 
 	private class ContextPoolMonitorThread extends MonitorThread {
-	    private long millis;
 
 		public ContextPoolMonitorThread(long millis) {
-			super("Context Pool Monitor Thread");
-			this.millis = millis;
+			super("Context Pool Monitor Thread", millis);
 		}
 
 		@Override
-		public void run() {
-			while (!retire) {
-				try {
-					Thread.sleep(millis);
-				} catch (InterruptedException e) {
-					e.printStackTrace();
-				}
-				log.info(new StringBuilder("## Context Pool Monitor: ").append(pool.getMessage()).toString());
-			}
+		public void run0() {
+		    log.info(new StringBuilder("## Context Pool Monitor: ").append(pool.getMessage()).toString());
 		}
 	}
 

@@ -1,6 +1,7 @@
 package indi.crawler.task.def;
 
 import java.io.Serializable;
+import java.nio.charset.Charset;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -61,11 +62,12 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
     private long defaultRetriesDeferrals = 10000L; // 尝试时每次等待十秒
     /** 历史执行任务数 */
     private AtomicLong totalCounts = new AtomicLong();
-    private List<Processor> customProcessors = new LinkedList<>();// 配置的拦截器
+    private List<Processor> customProcessors = new LinkedList<>();// 用户配置的任务级别拦截器
     @Setter private List<Processor> crawlerProcessors;// 真正的拦截器
     private List<ExceptionHandler> crawlerExceptionHandler = new LinkedList<>();
     private TaskType type = TaskType.HTTP_TOPICAL;
     private TYPE resultType = TYPE.String;
+    private Charset resultStringCharset;
     @Setter private int priority = 0;// 优先级 数值越小优先级越高
     private boolean keepReceiveCookie = false;
     @Setter private CookieStore cookieStore;
@@ -211,8 +213,19 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
             return this;
         }
 
+        /**
+         * 默认为String
+         * 
+         * @param type
+         * @return
+         */
         public Builder withResultType(TYPE type) {
             taskDef.resultType = type;
+            return this;
+        }
+        
+        public Builder withResultCharset(Charset charset) {
+            taskDef.resultStringCharset = charset;
             return this;
         }
 
@@ -317,7 +330,7 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
         }
         
         /**
-         * 设置阻塞执行的时间，将启用阻塞执行功能；即设置多少时间执行一次该任务，可通过该配置避免因访问频率过高而被ban
+         * 启用并设置当前任务的阻塞执行时间；即设置多久执行一次该任务，可通过该配置避免因访问频率过高而被ban。
          * 
          * @author DragonBoom
          * @since 2020.03.25
@@ -325,7 +338,6 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
          * @return
          */
         public Builder withBlockingMillis(long millis) {
-            job.setEnableBlkckingWait(true);
             job.getBlockingWaitFilter().addBlock(taskDef, millis);
             
             return this;

@@ -15,13 +15,14 @@ public interface TaskPool extends Message {
     boolean offer(Task task);
     
     /**
-     * 回收爬虫任务，不能用于新增爬虫 
+     * 延期执行爬虫任务，只允许添加状态为延期的任务 
      * 
      * @author DragonBoom
      * @param task
-     * @return
+     * @param wakeUpTime TODO
+     * @return 是否回收成功
      */
-    boolean recover(Task task);
+    boolean deferral(Task task, Long wakeUpTime);
     
     Task poll();
     

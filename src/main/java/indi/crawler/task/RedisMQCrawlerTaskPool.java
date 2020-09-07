@@ -129,7 +129,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     
 
     @Override
-    public boolean recover(Task task) {
+    public boolean deferral(Task task, Long wakeUpTime) {
         // 暂不实现。。
         return offer(task);
     }

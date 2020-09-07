@@ -88,9 +88,9 @@ public class HTTPProcessorExecutor extends ProcessorExecutor {
      * @param ctx
      */
     private void finishCrawlerContext(Task ctx) {
-        ctx.setStatus(CrawlerStatus.FINISHED);
-        // 主动移除爬虫
         ctx.getController().getTaskPool().removeLeased(ctx);
+        // 置为FINISHED状态后，将由JVMMonitor做进一步处理
+        ctx.setStatus(CrawlerStatus.FINISHED);
     }
     
     private boolean isOver(ProcessorResult result) {

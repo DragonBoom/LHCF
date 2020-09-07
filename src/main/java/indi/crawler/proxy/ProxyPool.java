@@ -5,6 +5,14 @@ import java.util.PriorityQueue;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * 代理池
+ * 
+ * <p>考虑到免费代理的不稳定性，预计使用代理池并不能显著提升性能，暂时搁置
+ * 
+ * @author wzh
+ * @since 2020.07.23
+ */
 public abstract class ProxyPool {
     private PriorityQueue<PriorityProxy> availables;
     private HashSet<PriorityProxy> leaseds;

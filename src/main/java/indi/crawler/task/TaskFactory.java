@@ -50,20 +50,27 @@ public class TaskFactory {
         TaskDef task = controller.getJob().getTaskDef(taskName);
         return build(task, uri, requestEntityString);
     }
-
+    
     public Task build(TaskDef taskDef, final URI uri, String requestEntityStr) {
-        Task task = new Task();
-        task.setTaskDefName(taskDef.getName());
-        task.setRequestEntityStr(requestEntityStr);
-        task.setController(controller);
-        // 从Task中复制属性
-        BeanUtils.copySelectedProperties(taskDef, task)
-                .copy("host")
-                .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
-                .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）
+        HttpEntity requestEntity = null;
+        if (requestEntityStr != null) {
+            try {
+                requestEntity = new StringEntity(requestEntityStr);
+            } catch (UnsupportedEncodingException e) {
+                throw new WrapperException(e);
+            }
+        }
+        return build(taskDef, uri, requestEntity);
+    }
+    
+    public Task build(String taskName, final URI uri, HttpEntity requestEntity) {
+        TaskDef task = controller.getJob().getTaskDef(taskName);
+        return build(task, uri, requestEntity);
+    }
+
+    public Task build(TaskDef taskDef, final URI uri, HttpEntity requestEntity) {
         // 初始化请求
         HttpRequestBase request = null;
-        HttpEntity requestEntity = null;
 
         // full request, combine url & request...
         switch (taskDef.getMethod()) {
@@ -83,13 +90,7 @@ public class TaskFactory {
             request = new HttpPut(uri);
             break;
         }
-        if (requestEntityStr != null) {
-            try {
-                requestEntity = new StringEntity(requestEntityStr);
-            } catch (UnsupportedEncodingException e) {
-                throw new WrapperException(e);
-            }
-        }
+
         // 若请求可携带请求实体（方法是POST/PUT），则设置请求实体
         if (request instanceof HttpEntityEnclosingRequestBase && requestEntity != null) {
             ((HttpEntityEnclosingRequestBase) request).setEntity(requestEntity);
@@ -108,6 +109,16 @@ public class TaskFactory {
         if (config != null) {
             request.setConfig(config);
         }
+        
+        // 构建Task对象
+        Task task = new Task();
+        task.setTaskDefName(taskDef.getName());
+//        task.setRequestEntityStr(requestEntityStr);
+        task.setController(controller);
+        // 从Task中复制属性
+        BeanUtils.copySelectedProperties(taskDef, task)
+                .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
+                .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）
 
         task.setRequest(request);
         task.setRequestEntity(requestEntity);
