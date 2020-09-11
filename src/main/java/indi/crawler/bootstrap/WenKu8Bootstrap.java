@@ -10,8 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.Date;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -29,8 +29,10 @@ import indi.crawler.result.ResultHelper;
 import indi.crawler.task.ResponseEntity.TYPE;
 import indi.crawler.task.Task;
 import indi.exception.WrapperException;
-import indi.io.Base64PersistCenter;
+import indi.io.ClassPathProperties;
 import indi.io.FileUtils;
+import indi.io.JsonPersistCenter;
+import indi.io.PersistCenter;
 import indi.util.StringUtils;
 import lombok.Getter;
 import lombok.Setter;
@@ -44,25 +46,24 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class WenKu8Bootstrap implements Runnable {
-    // FIXME: 脱敏
-    private String userName = "1312449403";
-    private String password = "qq1312449403";
+    private String userName = ClassPathProperties.getProperty("/account.properties", "WenKu8-username");
+    private String password = ClassPathProperties.getProperty("/account.properties", "WenKu8-password");
     
     private Path localPath = Paths.get("f:", "小说");
     
-    private Base64PersistCenter persistCenter = new Base64PersistCenter(localPath, this, "bookNameIdMap", "bookNameDateMap");
+    private PersistCenter persistCenter = 
+            new JsonPersistCenter(localPath, this, "bookNameIdMap", "blacklist");
     
     /** 书名与轻小说文库ID的映射 */
     @Getter
     @Setter
     private Map<String, String> bookNameIdMap = new HashMap<>();
-    /** 轻小说文库中不存在的书的id的占位符 */
-    private static final String NOT_EXISTS_ID_PLACEHOLDER = "00";
-    
-    /** 书名与上次更新时间的映射 */
+    /**
+     * 不需要更新的书名，暂时通过修改持久化文件编辑
+     */
     @Getter
     @Setter
-    private Map<String, Date> bookNameDateMap = new HashMap<>();
+    private Set<String> blacklist = new HashSet<>();
     
     private static final String WIN_TMP_DIR_PATH = "F:\\tmp\\小说";
     
@@ -70,9 +71,6 @@ public class WenKu8Bootstrap implements Runnable {
         // 从文件中获取数据
         persistCenter.read();
         log.info("从文件中获取映射成功");
-        
-        System.out.println(bookNameDateMap);
-        System.out.println(bookNameIdMap);
     }
 
     
@@ -82,28 +80,33 @@ public class WenKu8Bootstrap implements Runnable {
         if (html.contains("登录成功")) {
             log.info("登录成功");
         } else {
-            log.error("登录成功：\n{}", html);
+            log.error("登录失败：\n{}", html);
         }
         // 遍历本地目录，获取可能需要更新的书籍名称
         Set<String> bookNames = null;
         try (Stream<Path> fStream = FileUtils.list(localPath)) {
             bookNames = fStream
-                    .filter(p -> !Files.isDirectory(p))
-                    .filter(p -> p.getFileName().toString().endsWith(".txt"))
+                    .filter(p -> !Files.isDirectory(p))// 忽视目录
+                    .filter(p -> p.getFileName().toString().endsWith(".txt"))// 只考虑txt文件
                     .map(p -> {
                         String fileName = p.getFileName().toString();
                         return fileName.substring(0, fileName.length() - 4);// 移除后缀
                     })
+                    .filter(bookName -> {
+                        if (blacklist.contains(bookName)) {
+                            log.info("忽视黑名单书籍：{}", bookName);
+                            return false;
+                        }
+                        return true;
+                    })// 忽视被加入黑名单的书
                     .collect(Collectors.toSet());
         }
         for (String bookName : bookNames) {
-            // 直接通过书名获取id
+            // 尝试通过保存在持久化文件中的记录，直接用书名获取id
             String id = bookNameIdMap.get(bookName);
             if (!StringUtils.isEmpty(id)) {
-                if (!NOT_EXISTS_ID_PLACEHOLDER.equals(id)) {
-                    log.info("从持久化文件中获取到 {} 的 id= {} ", bookName, id);
-                    helper.addNewTask("Download", "http://dl.wenku8.com/down.php?type=utf8&id=" + id, null, bookName);
-                }
+                log.info("从持久化文件中获取到 《{}》 的 id = {} ", bookName, id);
+                helper.addNewTask("Download", "http://dl.wenku8.com/down.php?type=utf8&id=" + id, null, bookName);
             } else {
                 // 不能获取id的，需要先进行查找
                 // 注意，这里把书名作为参数传入了Task对象中
@@ -127,7 +130,7 @@ public class WenKu8Bootstrap implements Runnable {
         // 搜索后，若只有一个结果，会直接重定向到详情页
         // 判断是否详情页
         Document doc = Jsoup.parse(html);
-        log.info("page title={}", doc.title());
+        log.info("Search Page title={}", doc.title());
         boolean isDetailPage = !doc.title().contains("搜索结果");
         String detailPageUrl;// 详情页URL
         if (!isDetailPage) {
@@ -141,8 +144,10 @@ public class WenKu8Bootstrap implements Runnable {
             // 添加详情页的任务
             if (StringUtils.isEmpty(detailPageUrl)) {
                 // 找不到书（可能不是在轻小说文库下载的）
-                log.info("找不到书，将加入黑名单：{}", bookName);
-                bookNameIdMap.put(bookName, NOT_EXISTS_ID_PLACEHOLDER);
+                log.info("找不到书，将加入黑名单：《{}》", bookName);
+                // 保存至黑名单并持久化到文件中
+                blacklist.add(bookName);
+                persistCenter.persist();
                 return;
             }
         } else {
@@ -170,32 +175,28 @@ public class WenKu8Bootstrap implements Runnable {
         }
         // 保存书名与id的映射信息
         
-        log.info("成功获取书 {} 的 id = {}", bookName, id);
+        log.info("成功获取书 《{}》 的 id = {}", bookName, id);
+        // 保存、持久化映射
         bookNameIdMap.put(bookName, id);
+        persistCenter.persist();
         // 构建下载请求：
         helper.addNewTask("Download", "http://dl.wenku8.com/down.php?type=utf8&id=" + id, null, bookName);
     }
     
     /** 进入下载详情页的逻辑：获取下载链接 */
     private void afterDownload(Task task, ResultHelper helper) throws Exception {
-        // 每下载完成一本书，就持久化name-id的映射
-        persistCenter.persist();
-        
         String bookName = (String) task.getArg();
+        
         File tmpFile = (File) task.getResponseEntity().getContent();
         Path source = tmpFile.toPath();
         Path target = localPath.resolve(task.getArg() + ".txt");
         // 判断小说是否有更新
         if (Files.exists(target) && (Files.size(source) == Files.size(target))) {
-            if (!bookNameDateMap.containsKey(bookName)) {
-                bookNameDateMap.put(bookName, new Date());
-            }
             // 小说没有更新，不需要覆盖文件，移除临时文件即可
             Files.delete(source);
             return;
         }
-        // 更新下载时间
-        bookNameDateMap.put(bookName, new Date());
+        
         
         // 移动临时文件
         Files.move(source, target, StandardCopyOption.REPLACE_EXISTING);

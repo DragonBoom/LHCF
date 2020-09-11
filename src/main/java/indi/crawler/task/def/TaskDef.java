@@ -57,7 +57,7 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
     // Specific HTTP HOST
     private HttpHost host;
     /** 默认最大重试次数 */
-    private int defaultMaxRetries = 10; // 默认尝试10次
+    private int defaultMaxRetries = 3; // 默认最多尝试3次
     /** 默认重试超过限制次数后等待的时间 */
     private long defaultRetriesDeferrals = 10000L; // 尝试时每次等待十秒
     /** 历史执行任务数 */
@@ -343,15 +343,21 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
             return this;
         }
         
+        volatile boolean builded = false;
+        
         /**
          * 构建爬虫任务定义
          * 
          * @return
          */
         public TaskDef build() {
+            if (builded) {
+                return taskDef;
+            }
+            builded = true;
             // 构建HttpClient的请求配置
             taskDef.requestConfigBuilder = RequestConfig.custom()
-                    .setProxy(taskDef.proxy)
+                    .setProxy(taskDef.proxy)// nullable
                     .setConnectionRequestTimeout(requestTimeout)
                     .setConnectTimeout(timeout);
             return taskDef;

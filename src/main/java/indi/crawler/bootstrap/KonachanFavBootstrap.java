@@ -27,6 +27,7 @@ import indi.crawler.task.Task;
 import indi.crawler.util.JobUtils;
 import indi.crawler.util.RedisUtils;
 import indi.exception.WrapperException;
+import indi.io.ClassPathProperties;
 import indi.io.FileUtils;
 import indi.util.CompressionUtils;
 import indi.util.SystemUtils;
@@ -79,8 +80,8 @@ public class KonachanFavBootstrap {
     private Path zipPath;
     /** 压缩包密码 */
     @Getter
-    private String zipPwd = "!qQ1312449403";
-    
+    private String zipPwd = ClassPathProperties.getProperty("/account.properties", "zip-pwd");
+
     /** 本地图片序号集合（缓存） */
     @Getter
     private static final Set<String> LOCAL_CODES = new HashSet<>();
@@ -338,7 +339,6 @@ public class KonachanFavBootstrap {
 //        FileUtils.clearDirectory(path);
 //        log.info("清空目录");
         
-//        String redisURI = "redis://172.104.66.71:6380";// 2019.10.26 不需要密码了？
         String redisURI = null;// 2019.10.26 设为null以测试速度会不会更快。。。好像确实快了很多。。。
 
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "");// 启用HTTPS代理

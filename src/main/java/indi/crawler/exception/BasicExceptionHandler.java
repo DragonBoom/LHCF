@@ -18,6 +18,7 @@ import indi.crawler.processor.ProcessorContext;
 import indi.crawler.task.CrawlerStatus;
 import indi.crawler.task.Task;
 import indi.crawler.task.def.TaskDef;
+import indi.exception.ExceptionUtils;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -71,7 +72,7 @@ public class BasicExceptionHandler implements ExceptionHandler {
 
     @Override
     public void handleException(ProcessorContext hCtx, Throwable throwable) {
-        log.warn("处理异常 {}", throwable.getMessage());
+        log.warn("处理异常 message={}", throwable.getMessage());
         Task ctx = hCtx.getCrawlerContext();
         ctx.setStatus(CrawlerStatus.PENDING);
         ctx.addThrowables(throwable);
@@ -79,7 +80,9 @@ public class BasicExceptionHandler implements ExceptionHandler {
         TaskDef task = ctx.getTaskDef();
         // 尝试用已有的处理器去处理异常，若找不到对应的处理器，再用默认的处理器处理
         BiFunction<Task, Throwable, HandleResult> handler = handlers.getOrDefault(throwable.getClass(), (ctx0, e) -> {
-            log.error("该异常目前尚无法处理，将尝试再次处理-{} {} \n {}", task.getName(), e, Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
+            // 以集合的形式输出异常栈到日志中
+            log.error("该异常目前尚无法处理，将尝试再次处理-{} {} \n {}", task.getName(), e,
+                    Arrays.stream(e.getStackTrace()).collect(Collectors.toList()));
             // 若捕获的异常无法处理，则标记任务无法完成，等待被回收
             e.printStackTrace();
             ctx0.setStatus(CrawlerStatus.INTERRUPTED);

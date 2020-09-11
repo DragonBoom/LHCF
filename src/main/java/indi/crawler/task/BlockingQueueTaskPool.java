@@ -1,5 +1,6 @@
 package indi.crawler.task;
 
+import java.util.Arrays;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.stream.Collectors;
 
 import org.apache.http.client.utils.DateUtils;
 
@@ -270,6 +272,11 @@ public class BlockingQueueTaskPool implements TaskPool {
     }
     
     @Override
+    public int deferralSize() {
+        return deferrals.size();
+    }
+
+    @Override
     public boolean isEmpty() {
         return getLeasedSize() == 0 && workableSize() == 0;
     }
@@ -281,7 +288,7 @@ public class BlockingQueueTaskPool implements TaskPool {
     @Override
     public String getMessage() {
         StringBuilder sb = new StringBuilder();
-        sb.append("availables--");
+        sb.append("availables--[ ");
         // 遍历每个任务定义
         for (Entry<TaskDef, PriorityBlockingQueue<Task>> e : availables.entrySet()) {
             PriorityBlockingQueue<Task> tasks = e.getValue();
@@ -291,6 +298,7 @@ public class BlockingQueueTaskPool implements TaskPool {
                 sb.append(" [ ").append(e.getKey().getName()).append(":").append(queueSize).append(" ] ");
             }
         }
+        sb.append(" ]");
         sb.append(" deferrials- [ ").append(deferrals.size()).append(" ], recently wake up is :")
                 .append(DateUtils.formatDate(new Date(recentlyWakeUpRecord), "yyyy-MM-dd"))
                 .append(" | ")
@@ -298,6 +306,15 @@ public class BlockingQueueTaskPool implements TaskPool {
                 .append(getLeasedSize())
                 .append("]");
         return sb.toString();
+    }
+    
+    @Override
+    public String getLeasedDetail() {
+        String detail = leaseds
+                .stream()
+                .map(task -> "<" + task.getTaskDefName() + " / " + task.getUri() + ">")
+                .collect(Collectors.joining(", "));
+        return detail;
     }
     
     @Override

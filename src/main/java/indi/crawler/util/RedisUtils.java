@@ -27,6 +27,9 @@ public class RedisUtils {
     
     /**
      * 获取异步命令。为每个线程（而不是每次调用）的每个uri创建一个连接（以确保brpop不会导致与其他线程的lpush阻塞）。
+     * 
+     * @param redisURI redis地址（含密码）；目前一个redisURI对应一个单例RedisClient，
+     * 而且redisURI字符串必须完全相同才会获得同一个Clinet。后续有空再考虑优化这点
      */
     public static RedisAsyncCommands<String, Object> getAsyncCommands(String redisURI) {
         // 获取指定连接的ThreadLocal<RedisAsyncCommands>
@@ -65,7 +68,8 @@ public class RedisUtils {
     /**
      * 获取单例RedisClient，用内存缓存实现。
      * 
-     * @param redisURI 目前一个redisURI对应一个单例RedisClient，而且redisURI字符串必须完全相同才会获得同一个Clinet。后续有空再考虑优化这点
+     * @param redisURI redis地址（含密码）；目前一个redisURI对应一个单例RedisClient，
+     * 而且redisURI字符串必须完全相同才会获得同一个Clinet。后续有空再考虑优化这点
      * @return
      */
     public static RedisClient getClient(String redisURI) {

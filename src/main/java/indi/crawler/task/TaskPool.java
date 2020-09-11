@@ -54,6 +54,15 @@ public interface TaskPool extends Message {
     int availableSize();
     
     /**
+     * 延期任务的数量
+     * 
+     * @return
+     * @author DragonBoom
+     * @since 2020.09.07
+     */
+    int deferralSize();
+    
+    /**
      * 判断爬虫池是否为空
      * 
      * @return
@@ -69,4 +78,13 @@ public interface TaskPool extends Message {
      * @return
      */
     boolean addFilter(TaskFilter filter);
+
+    /**
+     * 获取出租队列的详细信息
+     * 
+     * @return
+     * @author DragonBoom
+     * @since 2020.09.07
+     */
+    String getLeasedDetail();
 }

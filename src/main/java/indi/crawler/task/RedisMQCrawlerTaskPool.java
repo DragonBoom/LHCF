@@ -2,8 +2,6 @@ package indi.crawler.task;
 
 import java.io.Serializable;
 import java.net.URI;
-import java.time.Duration;
-import java.util.Calendar;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
@@ -13,6 +11,8 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
+import org.apache.logging.log4j.util.Strings;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
@@ -20,12 +20,8 @@ import indi.crawler.filter.TaskFilter;
 import indi.crawler.task.def.TaskDef;
 import indi.crawler.thread.CrawlerThread;
 import indi.crawler.util.RedisUtils;
-import indi.data.StringObjectRedisCodec;
 import indi.exception.WrapperException;
 import io.lettuce.core.KeyValue;
-import io.lettuce.core.RedisClient;
-import io.lettuce.core.api.StatefulRedisConnection;
-import io.lettuce.core.api.sync.RedisCommands;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -298,6 +294,12 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     }
 
     @Override
+    public int deferralSize() {
+        // TODO Auto-generated method stub
+        return 0;
+    }
+
+    @Override
     public boolean isEmpty() {
 //        return false;
         
@@ -306,8 +308,12 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
 
     @Override
     public boolean addFilter(TaskFilter filter) {
-        // TODO Auto-generated method stub
         return false;
+    }
+
+    @Override
+    public String getLeasedDetail() {
+        return Strings.EMPTY;
     }
 
 }

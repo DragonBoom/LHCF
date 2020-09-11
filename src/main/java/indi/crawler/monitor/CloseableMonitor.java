@@ -109,6 +109,8 @@ public class CloseableMonitor extends Monitor {
         
         Object[] lastArgs = new Object[] {}; 
         
+        private static final int WARN_LEASED_THRESHOLD = 10;
+        
         public void printLog() {
             CrawlerThreadPool threadPool = controller.getThreadPool();
             TaskPool taskPool = controller.getTaskPool();
@@ -123,19 +125,26 @@ public class CloseableMonitor extends Monitor {
             } else {
                 emptyTimes = 0;
             }
-            int warnTimes = DEFAULT_WARN_TIMES;// TODO:
-            // 2020.09.03 相较于上次有变化时才重新输出日志
-            if (emptyTimes > warnTimes) {
-                Object[] args = new Object[] {taskPool.availableSize(), taskPool.getLeasedSize(), threadPool.getWorkingThreadCount(),
-                        taskPool.workableSize(), emptyTimes, warnTimes, threadPool.isOver()};
+            int warnTimes = DEFAULT_WARN_TIMES;// 警告次数
+            if (emptyTimes > warnTimes) {// 各数值为空一定次数后再输出日志
+                Object[] args = new Object[] { taskPool.availableSize(), taskPool.getLeasedSize(),
+                        taskPool.deferralSize(),
+                        threadPool.getWorkingThreadCount(), taskPool.workableSize(), emptyTimes, warnTimes,
+                        threadPool.isOver() };
                 
+                // 2020.09.03 相较于上次有变化时才重新输出日志
                 if (!Arrays.equals(lastArgs, args)) {
                     log.info(
-                            "Available task count = {}, leased task count = {}, workable thread count = {}, "
-                                    + "workable task count = {}, emptyTimes/warnTimes = {}/{}, thread pool over = {}",
+                            "Available task count = {}, leased task count = {}, deferral count = {}, "
+                                    + "workable thread count = {}, "
+                                    + "workable task count = {}, emptyTimes/warnTimes = {}/{}, is thread pool over = {}",
                                     args);
+                    lastArgs = args;
+                    if (leasedSize < WARN_LEASED_THRESHOLD) {
+                        // 当出租爬虫数量过低时，打印出对队列的详细信息
+                        log.debug(taskPool.getLeasedDetail());
+                    }
                 }
-                
             }
         }
     }

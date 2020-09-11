@@ -1,7 +1,10 @@
 package indi.crawler.processor.http;
 
+import java.io.File;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+
+import com.gargoylesoftware.htmlunit.DownloadedContent;
 
 import indi.crawler.monitor.CloseableMonitor;
 import indi.crawler.processor.ProcessorContext;
@@ -23,23 +26,7 @@ public class LogSpeedProcessor extends HTTPProcessor {
     protected ProcessorResult handleResult0(ProcessorContext ctx) throws Throwable {
         Optional.of(ctx.getCrawlerContext().getResponseEntity()).ifPresent(e -> {
             responseCount.addAndGet(1);
-            switch(e.getType()) {
-            case ByteArray:
-                if (e.getContent() instanceof byte[]) {
-                    Optional.ofNullable((byte[]) e.getContent())
-                            .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
-                }
-                break;
-            case String:
-                if (e.getContent() instanceof String) {
-                    Optional.ofNullable((String) e.getContent())
-                            .map(str -> str.getBytes())
-                            .ifPresent(bytes -> downloadByteCount.addAndGet(bytes.length));
-                }
-                break;
-            default:
-                throw new IllegalArgumentException();
-            }
+            downloadByteCount.addAndGet(e.size());
         });
         CloseableMonitor.addLogAtEnd("LogSpeed", new StringBuilder()
                 .append("共下载 ").append(downloadByteCount.get() / 1024 / 1024).append(" mb")
