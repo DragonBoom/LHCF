@@ -26,6 +26,7 @@ import indi.crawler.result.ResultHandler;
 import indi.crawler.task.ResponseEntity;
 import indi.crawler.task.ResponseEntity.TYPE;
 import indi.crawler.util.JobUtils;
+import indi.io.ClassPathProperties;
 import indi.io.FileUtils;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,9 @@ import lombok.extern.slf4j.Slf4j;
  * error: 请进行reCAPTCHA验证。似乎是反爬虫程序升级了。。。现改为直接用浏览器的cookie进行登陆
  * 
  * <p>后续可改用Selenium进行模拟登陆
+ * 
+ * <p>用Selenium测试可以登陆，但登陆测试过多就需要验证（识图验证）；发现Pixiv的cookie有效期很久，为了省事，
+ * 后续还是继续直接从浏览器复制Cookie吧
  * 
  * @author wzh
  * @since 2020.03.13
@@ -47,9 +51,10 @@ public class PixivTotalTest {
 	/** 临时文件夹对象 */
     @Getter
     private static Path tmpDirPath = Paths.get("F:\\tmp\\crawler");
-	// FIXME: 脱敏
-	private static String userName = "1312449403@qq.com";
-	private static String password = "qq1312449403";
+	private static String userName = ClassPathProperties.getProperty("/account.properties", "pixiv-username");
+	private static String password = ClassPathProperties.getProperty("/account.properties", "pixiv-password");
+	// 从浏览器获得的cookie的值
+	private static String PHPSESSID = "10127376_Us9Dx1ZXwDisqanTc9jLgBefXdcaHovF";
 	
 	/** 本地图片序号集合（缓存） */
     @Getter
@@ -119,7 +124,7 @@ public class PixivTotalTest {
                         + offset + "&limit=" + counts + "&rest=show");
             }
         } else {
-            log.error("访问收藏夹api异常:" + jsonStr);
+            log.error("访问收藏夹api异常，可能是权限不足:" + jsonStr);
             System.exit(-1);
             throw new RuntimeException("访问收藏夹api异常:" + jsonStr);
         }
@@ -200,6 +205,16 @@ public class PixivTotalTest {
         log.info("下载成功 {}", path);
         Files.move(tmpFile.toPath(), path, StandardCopyOption.REPLACE_EXISTING);// 注意，若文件已存在将覆盖
     };
+    
+    /**
+     * 借助selenium实现登陆
+     * 
+     * @author DragonBoom
+     * @since 2020.09.09
+     */
+    private void loginBySelenium() {
+        
+    }
 
 	public static void main(String[] args) throws Exception {
 	    // 由于用Eclipse直接打包为Runnable jar时日志的配置文件的路径不是/src/main/resources而是/resources，故用以下代码进行兼容
@@ -270,7 +285,7 @@ public class PixivTotalTest {
                 // 收藏夹详情页
                 .withTask("PreDownload")
                         .withResultHandler(preDownloadRH)
-                        .withBlockingMillis(100)// 阻塞地执行，1s 1次请求，避免被ban
+                        .withBlockingMillis(1000)// 阻塞地执行，1s 1次请求，避免被ban
 //                        .withLogDetail()
                         .withKeepReceiveCookie()
                         .withPriority(8)
@@ -290,8 +305,7 @@ public class PixivTotalTest {
 	    // 模拟登陆 模块在Pixiv更新后有问题
 	    // 手动新增cookie（已测试仅需以下1个cookie）
 	    CookieStore cookieStore = job.getCookieStore();
-	    String phpsessid = "10127376_AT9boRxzytYikcbjLxRoeas1zdA9ghQP";
-	    cookieStore.add("PHPSESSID=" + phpsessid +"; path=/; domain=.pixiv.net; secure; HttpOnly", 
+	    cookieStore.add("PHPSESSID=" + PHPSESSID +"; path=/; domain=.pixiv.net; secure; HttpOnly", 
 	            URI.create("https://accounts.pixiv.net/api/login?lang=zh"));
 //	    
 //	    cookieStore.add("device_token=069de615bab965caf36a5c99258c7a15; expires=Thu, 07-May-2020 06:07:27 GMT; Max-Age=2592000; path=/; domain=.pixiv.net; secure; HttpOnly", 
