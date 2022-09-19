@@ -11,14 +11,11 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
-import org.apache.logging.log4j.util.Strings;
-
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 
 import indi.crawler.filter.TaskFilter;
 import indi.crawler.task.def.TaskDef;
-import indi.crawler.thread.CrawlerThread;
 import indi.crawler.util.RedisUtils;
 import indi.exception.WrapperException;
 import io.lettuce.core.KeyValue;
@@ -114,11 +111,10 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
                 taskDefsLock.unlock();
             }
         }
-        SimpleTask simpleTask = new SimpleTask(task.getTaskDefName(), task.getRequestEntityStr(), task.getUri());
-        
         // remove from leaseds
         leaseds.remove(task);
         
+        SimpleTask simpleTask = new SimpleTask(task.getTaskDefName(), task.getRequestEntityStr(), task.getUri());
         RedisUtils.getAsyncCommands(redisURI).lpush(redisListKey, simpleTask);
         return true;
     }
@@ -137,7 +133,6 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     @NoArgsConstructor
     private static final class SimpleTask implements Serializable {
         private static final long serialVersionUID = 1L;
-        
         private String taskDefName;
         private String requestEntityStr;
         private URI uri;
@@ -196,12 +191,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
                 return null;
             }
         } catch (InterruptedException | ExecutionException e) {
-            // 结束线程时，由于线程仍在这里阻塞，会导致无意义的报错，因此这里加这个判断
-            CrawlerThread currentThread = (CrawlerThread) Thread.currentThread();
-            if (currentThread.isRetire()) {
-                return null;
-            }
-            
+            // 结束线程时，由于线程仍在这里阻塞，会导致无意义的报错，因此这里加这个判断 FIXME: 为啥？
             e.printStackTrace();
         } finally {
             pollLock.unlock();
@@ -264,7 +254,7 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     }
 
     @Override
-    public boolean removeLeased(Task ctx) {
+    public boolean remove(Task ctx) {
         return leaseds.remove(ctx);
     }
 
@@ -309,11 +299,6 @@ public class RedisMQCrawlerTaskPool implements TaskPool {
     @Override
     public boolean addFilter(TaskFilter filter) {
         return false;
-    }
-
-    @Override
-    public String getLeasedDetail() {
-        return Strings.EMPTY;
     }
 
 }

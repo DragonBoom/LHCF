@@ -1,72 +1,84 @@
 package indi.crawler.thread;
 
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+
+import com.google.common.base.Objects;
 
 import indi.crawler.exception.AbortTaskException;
 import indi.crawler.task.CrawlerController;
-import indi.crawler.task.CrawlerStatus;
 import indi.crawler.task.Task;
+import indi.exception.WrapperException;
 import indi.obj.Message;
-import indi.thread.BasicThread;
 import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * 爬虫线程类，不包含具体工作的逻辑
  * 
+ * <p>为了配合线程池使用，不再继承Thread接口。因此，实际执行爬虫任务的线程并非本类的实例
+ * 
  * @author DragonBoom
  *
  */
-public class CrawlerThread extends BasicThread implements Message {
+@Slf4j
+public class CrawlerThread implements Runnable, Message {
     private CrawlerController controller;
     @Getter
     private volatile boolean retire;
     private Task currentTask;
-    private int workNumber;
+    /** 工作次数 */
+    private int workTimes;
+    @Getter
+    private String name;
+    @Getter
+    private Thread currentThread;
 
-    private void init(CrawlerThreadPool pool) {
-        controller = pool.getController();
+    private void init(CrawlerThreadPool pool, String threadName) {
+        this.controller = pool.getController();
+        this.name = threadName;
     }
 
-    public CrawlerThread(CrawlerThreadPool pool, String threadName) {
-        super(pool, threadName);
-        init(pool);
+    public CrawlerThread(CrawlerThreadPool pool,String threadName) {
+        init(pool, threadName);
     }
 
+    /*
+     * 2020.10.04 不负责处理业务上的异常
+     */
     @Override
     public void run() {
+        currentThread = Thread.currentThread();
         while (!retire) {
             try {
                 // 领取爬虫任务
                 Task ctx = null;
+//                System.out.println("领取任务：" + currentThread);
                 ctx = controller.poll();
                 // 若没有领取到任务，开始休息
                 if (ctx == null) {
-                    TimeUnit.SECONDS.sleep(2);// 休息2s
+//                    System.out.println("领取任务失败：" + currentThread);
+                    try {
+                        TimeUnit.SECONDS.sleep(2);// 休息2s
+                    } catch (InterruptedException e) {
+                    }
                     continue;
                 }
                 currentTask = ctx;
+                Thread.interrupted();// 清除可能被无视的中断状态
+                ctx.setThread(this);
                 // 执行任务 
                 controller.process(ctx);
                 
-                workNumber++;
-                currentTask = null;
-            } catch (InterruptedException e) {
-                // 判断是否为领取不到任务后休息时被中断
-                if (currentTask == null) {
-                    // donothing
-                } else {
-                    e.printStackTrace();
-                }
+                workTimes++;
             } catch (AbortTaskException e) {
-                // 爬虫主动结束任务，任务无论是否完成、无论进度如何都将遭到抛弃
-                currentTask.setStatus(CrawlerStatus.ABORTED);
-                controller.getTaskPool().removeLeased(currentTask);
-                currentTask = null;
-            } catch (Throwable throwable) {
-                // 发生异常
-                currentTask = null;// for isWorking
-                throwable.printStackTrace();
+                // 爬虫主动结束任务
+                log.debug("主动结束任务：{}", Optional.ofNullable(currentTask).map(Task::getMessage).orElse(null));
+            } catch (Exception e) {
+                // 理论上不会执行到这里
+                throw new WrapperException(e);
             }
+            currentTask = null;
         }
     }
 
@@ -79,21 +91,34 @@ public class CrawlerThread extends BasicThread implements Message {
     }
 
     public boolean isWorking() {
-        return currentTask != null ? true : false;
+        return currentTask != null;
     }
     
     /**
-     * 强制完成当前任务
+     * 主动结束当前任务
+     * 
+     * 注意，执行该方法的线程可能不是创建爬虫的线程，但这种情况下无法保证立即结束
+     * 
+     * @param task 仅当本对象对应的爬虫线程当前处理的是该任务时才将其强制完成
      */
-    public void completeCurrentTask() {
-        throw new AbortTaskException();// 抛出非受查异常，使爬虫线程回到循环
+    public void completeCurrentTask(Task task) {
+        if (Thread.currentThread() == currentThread) {
+            // 正在被执行该任务的线程执行，不需要考虑已切换到其他任务的情况
+            if (!Objects.equal(currentTask, task)) {
+                return;
+            }
+            throw new AbortTaskException();// 抛出非受查异常，使爬虫线程立即结束任务
+        } else {
+            // 需要注意的是，不能用Thread.interrupt()来中断传输HTTP数据：目前传输数据时虽然用到了Channel，但并没有
+            // 真正的实现可中断
+        }
     }
 
     @Override
     public String getMessage() {
-        return new StringBuilder(this.getName())
+        return new StringBuilder(name)
             .append(" ，该爬虫已经工作了 ")
-            .append(workNumber)
+            .append(workTimes)
             .append(" 次，其当前持有的爬虫上下文为 ")
             .append(currentTask.getMessage())
             .toString();

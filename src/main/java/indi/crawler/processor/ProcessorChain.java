@@ -4,7 +4,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
-import indi.crawler.exception.AbortTaskException;
 import indi.crawler.exception.BasicExceptionHandler;
 import indi.crawler.exception.ExceptionHandler;
 import indi.crawler.processor.http.HTTPProcessorExecutor;
@@ -16,7 +15,7 @@ import lombok.extern.slf4j.Slf4j;
 
 /**
  * 具体的线程安全应该由各爬虫控制器自己来确保
- * 
+ *
  * @author dragonboom
  *
  */
@@ -40,7 +39,7 @@ public class ProcessorChain {
 
     /**
      * 执行爬虫任务
-     * 
+     *
      * @param ctx
      */
     public void process(Task ctx) {
@@ -53,8 +52,6 @@ public class ProcessorChain {
         ProcessorExecutor executor = getExecutor(task);
         try {
             executor.execute(pCtx, processors);
-        } catch (AbortTaskException e) {
-            throw e;// 继续对外抛出异常
         } catch (Throwable e) {
             exceptionHandler.handleException(pCtx, e);
         }
@@ -69,7 +66,7 @@ public class ProcessorChain {
         if (processors != null) {
             return processors;
         }
-        
+
         // 1. 添加自定义处理器
         List<Processor> taskProcessor = task.getCustomProcessors();
         List<Processor> jobProcessor = controller.getJob().getCustomProcessors();
@@ -105,7 +102,7 @@ public class ProcessorChain {
 
     /**
      * 获取爬虫任务的执行器
-     * 
+     *
      * @param task
      * @return
      */

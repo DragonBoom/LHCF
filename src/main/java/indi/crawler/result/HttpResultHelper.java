@@ -1,8 +1,11 @@
 package indi.crawler.result;
 
+import java.io.Serializable;
 import java.net.URI;
 import java.util.LinkedList;
 import java.util.List;
+
+import javax.annotation.Nullable;
 
 import org.apache.http.HttpEntity;
 
@@ -41,7 +44,7 @@ public class HttpResultHelper implements ResultHelper {
     }
     
     @Override
-    public void addNewTask(String taskName, String uri, HttpEntity requestEntity, Object arg) {
+    public void addNewTask(String taskName, String uri, @Nullable HttpEntity requestEntity, Serializable arg) {
         Task newTask = taskFactory.build(taskName, URI.create(uri), requestEntity);
         newTask.setArg(arg);
         newTasks.add(newTask);

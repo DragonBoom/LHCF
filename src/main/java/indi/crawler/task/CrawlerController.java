@@ -3,12 +3,14 @@ package indi.crawler.task;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.ReentrantLock;
 
 import indi.crawler.bootstrap.CrawlerJob;
 import indi.crawler.filter.TaskFilter;
 import indi.crawler.monitor.JVMMonitor;
 import indi.crawler.monitor.Monitor.MonitorThread;
 import indi.crawler.processor.ProcessorChain;
+import indi.crawler.thread.CrawlerThread;
 import indi.crawler.thread.CrawlerThreadPool;
 import lombok.Getter;
 import lombok.Setter;
@@ -23,13 +25,13 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class CrawlerController {
-    public final static Long DEFAULT_TIME_TO_LIVE = 64L;
-    public final static TimeUnit DEFAULT_TIME_TO_LIVE_UNIT = TimeUnit.SECONDS;
+    public static final Long DEFAULT_TIME_TO_LIVE = 64L;
+    public static final TimeUnit DEFAULT_TIME_TO_LIVE_UNIT = TimeUnit.SECONDS;
     @Getter
-    private TaskPool taskPool;
+    private TaskPool taskPool;// 懒加载
     @Getter
     @Setter
-    private CrawlerThreadPool threadPool;// 懒加载
+    private CrawlerThreadPool threadPool;
     @Getter
     private CrawlerJob job;
     @Getter
@@ -37,26 +39,21 @@ public class CrawlerController {
     @Getter
     @Setter
     private TaskFactory taskFactory;
-    
-    @Getter
-    @Setter
-    private List<MonitorThread> monitorThreads = new LinkedList<>();// 监视器线程集合
+    private List<MonitorThread> monitors;// 监视器线程集合
 
     /**
      * 初始化
      */
     private void init(CrawlerJob job) {
+        this.job = job;
+        monitors = new LinkedList<>();
         threadPool = new CrawlerThreadPool(this);
-
         chain = new ProcessorChain(this);
-        
         taskFactory = new TaskFactory(this);
-        
         new JVMMonitor(this);
     }
 
     public CrawlerController(CrawlerJob job) {
-        this.job = job;
         init(job);
     }
 
@@ -81,41 +78,42 @@ public class CrawlerController {
     /**
      * 开始执行爬虫任务
      */
-    public void process(Task ctx) {
-        chain.process(ctx);
+    public void process(Task task) {
+        initProcessStatus(task);
+        chain.process(task);
     }
     
-    public boolean offer(Task ctx) {
-        if (taskPool == null) {
-            initTaskPool();
-        }
-        return taskPool.offer(ctx);
+    private void initProcessStatus(Task task) {
+        task.checkAndSetStatus(CrawlerStatus.RUNNING);
+        task.setAttempts(task.getAttempts() + 1);
+        task.getTaskDef().addTotalCounts();
+    }
+    
+    public boolean offer(Task task) {
+        return getPool().offer(task);
     }
     
     /**
-     * 回收并延期执行爬虫
+     * 延期执行爬虫
      * 
      * @param ctx
      * @param wakeUpTime 唤醒时间，毫秒
-     * @return
+     * @return 成功true，失败false
      */
     public boolean deferral(Task ctx, Long wakeUpTime) {
-        return taskPool.deferral(ctx, wakeUpTime);
+        return getPool().deferral(ctx, wakeUpTime);
 
     }
     
     public Task poll() {
-        if (taskPool == null) {
-            initTaskPool();
-        }
-        return taskPool.poll();
+        return getPool().poll();
     }
     
     /**
      * 结束所有监视器线程
      */
     public void retireMonitorThreads() {
-        for (MonitorThread monitorThread : monitorThreads) {
+        for (MonitorThread monitorThread : monitors) {
             if (!monitorThread.isRetire()) {
                 monitorThread.retire();
             }
@@ -133,7 +131,7 @@ public class CrawlerController {
         retireMonitorThreads();
         // 关闭线程池
         threadPool.close();
-        log.info("结束强制爬虫任务完成");
+        log.info("强制结束爬虫任务完成");
     }
     
     /**
@@ -146,6 +144,66 @@ public class CrawlerController {
      */
     public boolean addFilter(TaskFilter filter) {
         log.info("添加爬虫任务过滤器:{}", filter);
-        return taskPool.addFilter(filter);
+        return getPool().addFilter(filter);
     }
+    
+    /**
+     * 
+     * @param thread
+     * @return 监视器数量
+     * @since 2020.10.04
+     */
+    public synchronized int addMonitor(MonitorThread thread) {
+        monitors.add(thread);
+        return monitors.size();
+    }
+    
+    /**
+     * 统一的修改爬虫状态的入口。
+     * 
+     * <p>当且仅当爬虫状态不符合预期时，通过爬虫任务自带的可重入锁加锁，然后执行给定的函数
+     * 
+     * @param task
+     * @param 修改爬虫状态的函数
+     * @since 2021.12.11
+     */
+    public void changeStatus(Task task, CrawlerStatus status, Runnable setStatusFun) {
+        ReentrantLock lock = task.getStatusLock();
+        lock.lock();
+        try {
+            CrawlerStatus oldStatus = task.getStatus();
+            if (!oldStatus.equals(status)) {
+                if (oldStatus.equals(CrawlerStatus.ABORTED)) {
+                    log.info("已忽略对主动中断任务的状态的变更");
+                } else {
+                    setStatusFun.run();
+                }
+            }
+        } finally {
+            lock.unlock();
+        }
+        checkStatus(task);
+    }
+    
+    /**
+     * 统一的校验爬虫状态的入口
+     * 
+     * @param task
+     * @since 2021.12.11
+     */
+    public void checkStatus(Task task) {
+        CrawlerStatus status = task.getStatus();
+        
+        switch (status) {
+        case ABORTED:
+            CrawlerThread thread = task.getThread();
+            if (thread != null) {
+                thread.completeCurrentTask(task);
+                getPool().remove(task);
+            }
+            break;
+        default :
+        }
+    }
+    
 }

@@ -23,6 +23,7 @@ import lombok.NoArgsConstructor;
  * @author wzh
  * @since 2020.09.04
  */
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class HttpEntityBuilder {
     
     /**

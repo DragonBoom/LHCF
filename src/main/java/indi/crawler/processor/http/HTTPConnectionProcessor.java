@@ -5,14 +5,14 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.nio.channels.Channels;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.apache.http.HttpEntity;
-import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpRequestBase;
@@ -27,16 +27,16 @@ import indi.crawler.processor.ProcessorResult;
 import indi.crawler.result.HttpResultHelper;
 import indi.crawler.result.ResultHandler;
 import indi.crawler.task.CrawlerController;
+import indi.crawler.task.CrawlerStatus;
 import indi.crawler.task.ResponseEntity;
 import indi.crawler.task.ResponseEntity.TYPE;
 import indi.crawler.task.Task;
 import indi.crawler.task.def.TaskDef;
-import indi.crawler.thread.CrawlerThread;
 import indi.io.FileUtils;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 负责处理Http连接
+ * 负责执行HTTP连接，包括对HTTP响应的处理
  * 
  * @author DragonBoom
  *
@@ -50,33 +50,36 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
     private CrawlerController controller;
     
     public HTTPConnectionProcessor(CrawlerController controller) {
-        init();
-        this.controller = controller;
+        init(controller);
     }
 
-    private void init() {
+    private void init(CrawlerController controller) {
         log.info("register HTTPConnectionProcessor...");
+        this.controller = controller;
+        client = createDefaultHttpClient(controller);
+    }
+    
+    private HttpClient createDefaultHttpClient(CrawlerController controller) {
+        log.info("use default httpclient");
         PoolingHttpClientConnectionManager manager = new PoolingHttpClientConnectionManager();
-        manager.setMaxTotal(DEFAULT_MAX_ROUTE); // TODO
-        manager.setDefaultMaxPerRoute(DEFAULT_MAX_PER_ROUTE); // TODO
-        client = HttpClientBuilder.create()
+        manager.setMaxTotal(DEFAULT_MAX_ROUTE);
+        manager.setDefaultMaxPerRoute(DEFAULT_MAX_PER_ROUTE);
+        return HttpClientBuilder.create()
                 // 默认会根据状态码(301)，对GET/HEAD请求进行重定向，可见：DefaultRedirectStrategy
-//                .setRedirectStrategy(redirectStrategy)
+                //              .setRedirectStrategy(redirectStrategy)
                 .setConnectionManager(manager).build();
     }
 
     @Override
     protected ProcessorResult executeRequest0(ProcessorContext pCtx) throws Exception {
         Task task = pCtx.getCrawlerContext();
+        controller.checkStatus(task);
         TaskDef taskDef = task.getTaskDef();
-        Function<String, Boolean> checkFun = taskDef.getCheckFun();
-        if (checkFun != null) {
+        Predicate<String> checkFun = taskDef.getCheckFun();
+        if (checkFun != null && !checkFun.test(task.getUri().toString())) {
             // 检测是否要执行当前任务，若不需要，则通过线程类的方法使线程直接跳过该任务，继续处理其他任务
-            Boolean checkAccept = checkFun.apply(task.getUri().toString());
-            if (!checkAccept) {
-                CrawlerThread currentThread = (CrawlerThread) Thread.currentThread();
-                currentThread.completeCurrentTask();
-            }
+            log.debug("根据定义的URI校验，跳过任务：{}", task.getMessage());
+            task.checkAndSetStatus(CrawlerStatus.ABORTED);
         }
         
         HttpRequestBase request = task.getRequest();
@@ -94,10 +97,11 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
     @Override
     protected ProcessorResult receiveResponse0(ProcessorContext pCtx) throws Exception {
         Task task = pCtx.getCrawlerContext();
+        controller.checkStatus(task);
         TaskDef taskDef = task.getTaskDef();
 
         Charset charset = taskDef.getResultStringCharset();
-        // TODO 可配
+        // TODO 可配置
         charset = Optional.ofNullable(charset).orElse(Charset.defaultCharset());
         HttpResponse response = task.getResponse();
         HttpEntity httpEntity = response.getEntity();
@@ -110,18 +114,19 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
         TYPE type = responseEntity.getType();
         Objects.requireNonNull(type);
         switch (responseEntity.getType()) {
-        case String:
+        case STRING:
             byte[] bytes = EntityUtils.toByteArray(httpEntity);
             resultV = new String(bytes, charset);
             break;
-        case ByteArray:
+        case BYTE_ARRAY:
             resultV = EntityUtils.toByteArray(httpEntity);
             break;
-        case File:// 将响应流写入临时文件中，可显著减少内存占用
+        case TMP_FILE:// 将响应流写入临时文件中，可显著减少内存占用
             // generate tmp file
-            // 临时文件的存放目录，优先取任务定义的路径，若没有，再取整个爬虫项目的路径，若也没有，则取默认路径
-            String tempDir = Optional.ofNullable(taskDef.getTmpDir())
-                    .orElse(Optional.ofNullable(controller.getJob().getTmpFolderPath()).orElse(null));
+            // 临时文件的存放目录，先取任务定义的路径，若没有，再取整个爬虫项目的路径
+            Path tempDir = Optional.ofNullable(taskDef.getTmpDir())
+                    .orElseGet(() -> Optional.ofNullable(controller.getJob().getTmpFolder())
+                            .orElseThrow(() -> new RuntimeException("下载方式为文件，但任务定义：" + task.getTaskDefName() + "与Job均未设置临时文件路径")));
             Objects.requireNonNull(tempDir, "下载类型为文件时，必须指定缓存地址！");
             File tmpFile = FileUtils.createTmpFile(tempDir);
             // 将响应流写入临时文件
@@ -144,6 +149,7 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
     @Override
     protected ProcessorResult handleResult0(ProcessorContext pCtx) throws Exception {
         Task task = pCtx.getCrawlerContext();
+        controller.checkStatus(task);
         
         ResultHandler handler = task.getTaskDef().getResultHandler();
         HttpResultHelper resultHelper = new HttpResultHelper(controller.getTaskFactory());
@@ -160,16 +166,18 @@ public class HTTPConnectionProcessor extends HTTPProcessor {
     @Override
     protected ProcessorResult afterHandleResult0(ProcessorContext pCtx) throws Exception {
         Task task = pCtx.getCrawlerContext();
-        List<Task> tasks = task.getChilds();
-        if (tasks != null) {
-            Iterator<Task> i = tasks.iterator();
+        controller.checkStatus(task);
+        
+        List<Task> childs = task.getChilds();
+        if (childs != null) {
+            Iterator<Task> i = childs.iterator();
             CrawlerController controller = task.getController();
             while (i.hasNext()) {
                 if (!controller.offer(i.next())) {
                     i.remove(); // 若无法存入上下文池（重复任务），则将其移除
                 }
             }
-            task.setChilds(tasks);
+            task.setChilds(childs);
         }
         return ProcessorResult.CONTINUE_STAGE;
     }

@@ -2,9 +2,6 @@ package indi.crawler.cookies;
 
 import java.net.HttpCookie;
 import java.util.Collection;
-import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -40,8 +37,7 @@ public class MemoryCookieStore extends BasicCookieStore {
 
     @Override
     public Collection<HttpCookie> get0(String domain) {
-        Set<HttpCookie> cookies = multimap.get(domain);
-        return cookies;
+        return multimap.get(domain);
     }
 
     /**

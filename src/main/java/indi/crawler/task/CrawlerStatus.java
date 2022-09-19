@@ -9,7 +9,7 @@ package indi.crawler.task;
 public enum CrawlerStatus {
     CREATED("Created"), RUNNING("Running"),
     /**
-     * 等待中
+     * 正在判断状态将切换为什么值
      */
     PENDING("Pending"),
     /**

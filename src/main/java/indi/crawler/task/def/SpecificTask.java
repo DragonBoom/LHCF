@@ -48,7 +48,7 @@ public class SpecificTask implements Cleanupable {
 		requestEntity = null;
 	}
 
-	public Task toCrawlerContext(CrawlerController controller) {
+	public Task toTask(CrawlerController controller) {
 		TaskDef task = controller.getJob().getTaskDef(taskName);
 		Objects.requireNonNull(task);
 		return controller.getTaskFactory().build(task, uri, requestEntity);

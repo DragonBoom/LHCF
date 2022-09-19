@@ -34,7 +34,7 @@ public abstract class BasicCookieStore implements CookieStore {
 	 */
 	public String get(URI uri) {
 		String host = uri.getHost();
-		Objects.requireNonNull(host);
+		Objects.requireNonNull(host, "uri=" + uri);
 		LinkedList<String> domains = parseAllDomain(host);
 		LinkedList<HttpCookie> cookies = new LinkedList<>();
 		for (String domain : domains) {

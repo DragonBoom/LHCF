@@ -20,17 +20,17 @@ public class ResponseEntity implements Serializable {
 	private Long size;
 
 	public enum TYPE {
-		String, 
-		ByteArray, 
+		STRING, 
+		BYTE_ARRAY, 
 		/**
-		 * 文件，将把响应流写到磁盘的临时文件中，可显著减少内存占用
+		 * 文件，将把响应流写到磁盘的临时文件中，可显著减少内存占用；使用该下载类型时必须指定临时文件地址！
 		 */
-		File
+		TMP_FILE
 	}
 
 	public ResponseEntity(Object content, TYPE type) {
 		this.content = content;
-		this.type = Optional.ofNullable(type).orElse(TYPE.String);
+		this.type = Optional.ofNullable(type).orElse(TYPE.STRING);
 	}
 	
 	/**
@@ -49,16 +49,16 @@ public class ResponseEntity implements Serializable {
 	    }
         synchronized (this) {
             switch (type) {
-            case ByteArray:
+            case BYTE_ARRAY:
                 byte[] bytes = (byte[]) content;
                 size = (long) bytes.length;
                 break;
-            case String:
+            case STRING:
                 String str = (String) content;
                 size = (long) str.getBytes().length;
                 break;
             // 下载到文件中
-            case File:
+            case TMP_FILE:
                 File file = (File) content;
                 size = file.length();
                 break;
@@ -69,4 +69,5 @@ public class ResponseEntity implements Serializable {
         }
 	    return size;
 	}
+
 }

@@ -11,7 +11,7 @@ import indi.crawler.processor.ProcessorContext;
 public interface ExceptionHandler {
     
     /**
-     * 处理异常
+     * 处理执行爬虫任务过程中发生的异常
      */
     void handleException(ProcessorContext hCtx, Throwable throwable);
 }

@@ -1,6 +1,9 @@
 package indi.crawler.result;
 
+import java.io.Serializable;
 import java.util.List;
+
+import javax.annotation.Nullable;
 
 import org.apache.http.HttpEntity;
 
@@ -29,12 +32,12 @@ public interface ResultHelper {
      * 
      * @param taskName
      * @param uri
-     * @param requestEntity TODO
+     * @param requestEntity 
      * @param arg 可自行定义的传递用参数
      * @author DragonBoom
      * @since 2020.09.04
      */
-    void addNewTask(String taskName, String uri, HttpEntity requestEntity, Object arg);
+    void addNewTask(String taskName, String uri, @Nullable HttpEntity requestEntity, Serializable arg);
     
     List<Task> getNewTasks();
 }

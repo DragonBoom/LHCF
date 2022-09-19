@@ -180,7 +180,7 @@ public class RedisCacheProcessor extends CacheProcessor {
             List<Throwable> throwables = ctx.getThrowables();
             // 若没有缓存过该请求、响应不为空且没有发生过异常，则缓存该请求实体
             CrawlerStatus status = ctx.getStatus();
-            if (ctx.getResponse() != null && (throwables == null || throwables.size() == 0)
+            if (ctx.getResponse() != null && (throwables == null || throwables.isEmpty())
                     && (status.equals(CrawlerStatus.FINISHED) || status.equals(CrawlerStatus.RUNNING))) {
                 ResponseEntity responseEntity = ctx.getResponseEntity();
                 

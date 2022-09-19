@@ -2,6 +2,8 @@ package indi.crawler.task.def;
 
 import java.io.Serializable;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
@@ -10,7 +12,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.BiFunction;
-import java.util.function.Function;
+import java.util.function.Predicate;
 
 import org.apache.http.Header;
 import org.apache.http.HttpHost;
@@ -25,7 +27,7 @@ import indi.crawler.exception.ExceptionHandler;
 import indi.crawler.exception.LogExceptionHandler;
 import indi.crawler.processor.Processor;
 import indi.crawler.processor.http.CookieProcessor;
-import indi.crawler.processor.http.LogProcessor;
+import indi.crawler.processor.http.HttpLogProcessor;
 import indi.crawler.processor.http.RedisCacheProcessor;
 import indi.crawler.result.ResultHandler;
 import indi.crawler.task.ResponseEntity.TYPE;
@@ -36,59 +38,76 @@ import lombok.ToString;
 /**
  * 该类描述某一“类”处理url外其他因素相同的爬虫任务，相当于爬虫任务的模板
  * 
+ * <p>2021.12.10 由于会覆盖，因此Task中有默认值的变量，在这里也需要有默认值
+ * 
  * @author DragonBoom
  *
  */
 @Getter
-//@Setter
 @ToString
 public class TaskDef implements Comparable<TaskDef>, Serializable {
     private static final long serialVersionUID = 1L;
     private static final int DEFAULT_REQUEST_TIMEOUT = 4000;
     private static final int DEFAULT_TIMEOUT = 4000;
-    private ResultHandler resultHandler;
-    private HTTPMethodType method = HTTPMethodType.GET;
     /** 用于辨识Task身份 */
     private String name;
+    private ResultHandler resultHandler;
+    private HTTPMethodType method;
     /** HTTP请求头部，线程安全？！ */
     private HeaderGroup requestHeaders;
     private Lock headersLock;
-    private RequestConfig.Builder requestConfigBuilder;
+    private RequestConfig.Builder requestConfigBuilder = RequestConfig.custom();
     // Specific HTTP HOST
     private HttpHost host;
     /** 默认最大重试次数 */
-    private int defaultMaxRetries = 3; // 默认最多尝试3次
+    private int defaultMaxRetries; // 默认最多尝试3次
     /** 默认重试超过限制次数后等待的时间 */
-    private long defaultRetriesDeferrals = 10000L; // 尝试时每次等待十秒
+    private long defaultRetriesDeferrals; // 尝试时每次等待十秒
     /** 历史执行任务数 */
-    private AtomicLong totalCounts = new AtomicLong();
-    private List<Processor> customProcessors = new LinkedList<>();// 用户配置的任务级别拦截器
+    private AtomicLong totalCounts;
+    private List<Processor> customProcessors;// 用户配置的任务级别拦截器
     @Setter private List<Processor> crawlerProcessors;// 真正的拦截器
-    private List<ExceptionHandler> crawlerExceptionHandler = new LinkedList<>();
-    private TaskType type = TaskType.HTTP_TOPICAL;
-    private TYPE resultType = TYPE.String;
+    private List<ExceptionHandler> crawlerExceptionHandler;
+    private TaskType type;
+    private TYPE resultType;
     private Charset resultStringCharset;
-    @Setter private int priority = 0;// 优先级 数值越小优先级越高
-    private boolean keepReceiveCookie = false;
+    @Setter private int priority;// 优先级 数值越小优先级越高
+    private boolean keepReceiveCookie;
     @Setter private CookieStore cookieStore;
     @Setter private HttpHost proxy;
     private boolean needCheckRecord;// 是否需要检查记录，以避免重复请求
     private BiFunction<String, HttpRequestBase, String> idKeyGenerator;// <url, result, key>
-    private String tmpDir;// 临时文件的存储路径（最好和实际存储路径放在同一磁盘，以便于移动文件）
-    private Function<String, Boolean> checkFun;// 检查是否需要执行任务的函数
-    @Getter private String redisCacheUri;
+    private Path tmpDir;// 临时文件的存储路径（最好和实际存储路径放在同一磁盘，以便于移动文件）
+    private Predicate<String> checkFun;// 检查是否需要执行任务的函数
+    private String redisCacheUri;
+    /** 最大单次出租时间，默认5分钟 */
+    private long maxLeasedTime = -1;
     
     public enum HTTPMethodType {
         GET, POST, PUT, PATCH, DELETE;
     }
 
-    private void init() {
+    private void init(String name) {
+        this.name = name;
+        
+        // set default
+        method = HTTPMethodType.GET;
+        priority = 0;
+        defaultMaxRetries = 3;
+        defaultRetriesDeferrals = 10000L;
+        type = TaskType.HTTP_TOPICAL;
+        resultType = TYPE.STRING;
+        keepReceiveCookie = false;
+        // create instance
+        totalCounts = new AtomicLong();
+        customProcessors = new LinkedList<>();
         headersLock = new ReentrantLock();
         requestHeaders = new HeaderGroup();
-        // init HTTP headers
+        crawlerExceptionHandler = new LinkedList<>();
+        // init default HTTP headers
         requestHeaders.addHeader(new BasicHeader("accept",
                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3"));
-        requestHeaders.addHeader(new BasicHeader("accept-encoding", "gzip, deflate"));// error when `gzip, deflate, br` ? TODO Brotli
+        requestHeaders.addHeader(new BasicHeader("accept-encoding", "gzip, deflate"));// 不支持 br（Brotli）
         requestHeaders.addHeader(new BasicHeader("accept-language", "zh-CN,zh;q=0.9"));
         requestHeaders.addHeader(new BasicHeader("cache-control", "no-cache"));
         requestHeaders.addHeader(new BasicHeader("pragma", "no-cache"));
@@ -99,20 +118,11 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
     }
 
     private TaskDef(String name) {
-        this.name = name;
-        init();
+        init(name);
     }
 
     public void addTotalCounts() {
         totalCounts.incrementAndGet();
-    }
-
-    public TaskType getType() {
-        return type;
-    }
-
-    public HTTPMethodType getMethod() {
-        return method;
     }
 
     public Header[] getRequestHeaders() {
@@ -160,26 +170,42 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
         return o.getPriority() - this.getPriority();
     }
 
+    /**
+     * 只通过名称来判断是否相同
+     */
     @Override
     public boolean equals(Object o) {
-        if (o instanceof TaskDef) {
+        if (o instanceof TaskDef) {// "instanceof" returns false for nulls.
             TaskDef tmp = (TaskDef) o;
-            if (this.getName().equals(tmp.getName())) {
-                return true;
-            }
+            return Objects.equals(this.getName(), tmp.getName());
         }
         return false;
     }
-
+    
+    /**
+     * 等于名称的哈希值
+     */
+    @Override
+    public int hashCode() {
+        return this.getName().hashCode();
+    }
+    
+    /**
+     * 各方法理论上都只能调用1次，目前暂时没有校验，之后补充
+     * 
+     * @author wzh
+     * @since 2020.09.15
+     */
     public static class Builder {
+
         private TaskDef taskDef;
-        private int requestTimeout = DEFAULT_REQUEST_TIMEOUT;
-        private int timeout = DEFAULT_TIMEOUT;
+        private Integer requestTimeout = null;
+        private Integer timeout = null;
         private CrawlerJob job;
 
         private Builder(String taskName, CrawlerJob job) {
             this.taskDef = new TaskDef(taskName);
-            this.job = job;;
+            this.job = job;
         }
 
         public static Builder begin(String taskName) {
@@ -245,8 +271,15 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
         }
 
         public Builder withLogDetail() {
-            taskDef.customProcessors.add(new LogProcessor());
+            taskDef.customProcessors.add(new HttpLogProcessor());
             taskDef.crawlerExceptionHandler.add(new LogExceptionHandler());
+            return this;
+        }
+        
+        public Builder withLogDetail(boolean b) {
+            if (b) {
+                withLogDetail();
+            }
             return this;
         }
         
@@ -263,7 +296,10 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
         }
 
         public Builder withHTTPProxy(String hostname, int port) {
-            taskDef.proxy = new HttpHost(hostname, port);
+            HttpHost proxy = new HttpHost(hostname, port);
+            taskDef.requestConfigBuilder.setProxy(proxy);
+            
+            taskDef.proxy = proxy;
             return this;
         }
 
@@ -315,6 +351,17 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
          * @return
          */
         public Builder withTmpDir(String tmpDir) {
+            taskDef.tmpDir = Paths.get(tmpDir);
+            return this;
+        }
+        
+        /**
+         * 设置使用的临时文件夹（仅当ResultType为File时才有效）
+         * 
+         * @param tmpDir
+         * @return
+         */
+        public Builder withTmpDir(Path tmpDir) {
             taskDef.tmpDir = tmpDir;
             return this;
         }
@@ -324,7 +371,7 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
          * @param checkFun 返回false时跳过该爬虫任务
          * @return
          */
-        public Builder withURIChecker(Function<String, Boolean> checkFun) {
+        public Builder withURIChecker(Predicate<String> checkFun) {
             taskDef.checkFun = checkFun;
             return this;
         }
@@ -339,33 +386,57 @@ public class TaskDef implements Comparable<TaskDef>, Serializable {
          */
         public Builder withBlockingMillis(long millis) {
             job.getBlockingWaitFilter().addBlock(taskDef, millis);
-            
+            return this;
+        }
+        
+        /**
+         * 设置最大执行时间，默认5分钟
+         * 
+         * @param millis
+         * @return
+         * @since 2021.12.10
+         */
+        public Builder withMaxLeasedTime(long millis) {
+            taskDef.maxLeasedTime = millis;
             return this;
         }
         
         volatile boolean builded = false;
         
         /**
+         * 自定义请求设置
+         * 
+         * @param builder
+         * @return
+         * @since 2021.04.13
+         */
+        public Builder withRequestConfigBuilder(RequestConfig.Builder builder) {
+            taskDef.requestConfigBuilder = builder;
+            return this;
+        }
+        
+        /**
          * 构建爬虫任务定义
          * 
-         * @return
+         * @return TaskDef
          */
         public TaskDef build() {
             if (builded) {
-                return taskDef;
+                throw new RuntimeException("This Task Already Start !");
             }
             builded = true;
-            // 构建HttpClient的请求配置
-            taskDef.requestConfigBuilder = RequestConfig.custom()
-                    .setProxy(taskDef.proxy)// nullable
-                    .setConnectionRequestTimeout(requestTimeout)
-                    .setConnectTimeout(timeout);
+            
+            // 补充默认设置
+            taskDef.requestConfigBuilder
+                    .setConnectionRequestTimeout(Optional.ofNullable(requestTimeout).orElse(DEFAULT_REQUEST_TIMEOUT))
+                    .setConnectTimeout(Optional.ofNullable(timeout).orElse(DEFAULT_TIMEOUT));
             return taskDef;
         }
         
         /**
          * 向CrawlerJob注册该任务，并返回CrawlerJob以继续链式调用
-         * @return
+         * 
+         * @return CrawlerJob
          */
         public CrawlerJob and() {
             Objects.requireNonNull(job);

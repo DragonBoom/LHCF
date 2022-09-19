@@ -2,6 +2,7 @@ package indi.crawler.task;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 
 import org.apache.http.HttpEntity;
@@ -17,6 +18,7 @@ import org.apache.http.entity.StringEntity;
 
 import indi.bean.BeanUtils;
 import indi.crawler.task.def.TaskDef;
+import indi.crawler.task.def.TaskDef.HTTPMethodType;
 import indi.exception.WrapperException;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,7 +26,7 @@ import lombok.Setter;
 import lombok.ToString;
 
 /**
- * 生成爬虫上下文的工厂类
+ * 创建爬虫任务的工厂类
  * 
  * <p>将context的属性与初始化的逻辑进行解耦
  * 
@@ -73,7 +75,8 @@ public class TaskFactory {
         HttpRequestBase request = null;
 
         // full request, combine url & request...
-        switch (taskDef.getMethod()) {
+        HTTPMethodType method = taskDef.getMethod();
+        switch (method) {
         case GET:
             request = new HttpGet(uri);
             break;
@@ -89,6 +92,8 @@ public class TaskFactory {
         case PUT:
             request = new HttpPut(uri);
             break;
+        default:
+            throw new NoSuchElementException("Illegal request method: " + method);
         }
 
         // 若请求可携带请求实体（方法是POST/PUT），则设置请求实体
@@ -115,10 +120,11 @@ public class TaskFactory {
         task.setTaskDefName(taskDef.getName());
 //        task.setRequestEntityStr(requestEntityStr);
         task.setController(controller);
-        // 从Task中复制属性
+        // 从TaskDef中复制特定属性
         BeanUtils.copySelectedProperties(taskDef, task)
                 .copy("defaultMaxRetries", "maxRetries")// 最大重试次数
-                .copy("defaultRetriesDeferrals", "retryDeferrals");// 重试延时时间（millis）
+                .copy("defaultRetriesDeferrals", "retryDeferrals")
+                .copy("maxLeasedTime");// 重试延时时间（millis）
 
         task.setRequest(request);
         task.setRequestEntity(requestEntity);
@@ -130,7 +136,7 @@ public class TaskFactory {
         // gen and set id key
         Optional.ofNullable(taskDef.getIdKeyGenerator())
                 .map(fun -> fun.apply(task.getUri().toString(), task.getRequest()))
-                .ifPresent(idKey -> task.setIdentityKey(idKey));
+                .ifPresent(task::setIdentityKey);
         return task;
     }
 }

@@ -8,9 +8,9 @@ import lombok.extern.slf4j.Slf4j;
  * 爬虫上下文池监视器。目前的功能：
  * 
  * <li>定时打印爬虫池的信息
- *
  */
 @Slf4j
+@Deprecated
 public class ContextPoolMonitor extends Monitor {
 	private CrawlerJob job;
 	private TaskPool pool;

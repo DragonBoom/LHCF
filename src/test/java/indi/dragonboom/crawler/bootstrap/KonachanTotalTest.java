@@ -1,21 +1,16 @@
 package indi.dragonboom.crawler.bootstrap;
 
-import java.io.File;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.net.URL;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
-import org.junit.jupiter.api.Test;
-
-import com.google.common.reflect.ClassPath;
 
 import indi.crawler.bootstrap.KonachanFavBootstrap;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * <li>2019.12.06 目前的代码未linux vps版本。需要考虑到，
+ * <li>2019.12.06 目前的代码为linux vps版本。需要考虑到，
  * <pre>
  *      1. 与vps传输文件，上传慢但下载快
  *      2. vps本身执行速度（爬虫/压缩）特别快，与vps传输才是耗时最久的一环

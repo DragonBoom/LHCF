@@ -27,17 +27,15 @@ public class Monitor {
         
         public void startDeamon(CrawlerController controller) {
             this.controller = controller;
-            // 向控制器注册
-            controller.getMonitorThreads().add(this);
-            
+            // 向控制器注册本线程
+            controller.addMonitor(this);
             super.startDeamon();
         }
         
         public void startNotDeamon(CrawlerController controller) {
             this.controller = controller;
-            // 向控制器注册
-            controller.getMonitorThreads().add(this);
-            
+            // 向控制器注册本线程
+            controller.addMonitor(this);
             super.startNotDeamon();
         }
         
@@ -47,6 +45,8 @@ public class Monitor {
                 try {
                     TimeUnit.MILLISECONDS.sleep(sleepMillis);
                 } catch (InterruptedException e) {
+                    // Restore interrupted state...
+                    Thread.currentThread().interrupt();
                     // 睡眠中被中断
                     if (this.isRetire()) {
                         // 已退休，属于正常行为

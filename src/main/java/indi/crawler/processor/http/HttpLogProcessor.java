@@ -1,6 +1,7 @@
 package indi.crawler.processor.http;
 
 import org.apache.http.Header;
+import org.apache.http.HttpResponse;
 
 import indi.crawler.processor.ProcessorContext;
 import indi.crawler.processor.ProcessorResult;
@@ -10,13 +11,13 @@ import indi.crawler.task.def.TaskType;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * 详细日志处理器
+ * 用于在处理HTTP连接的各阶段输出日志
  * 
  * @author DragonBoom
  *
  */
 @Slf4j
-public class LogProcessor extends HTTPProcessor {
+public class HttpLogProcessor extends HTTPProcessor {
 
     /**
      * 将请求头数组将转化为字符串
@@ -39,11 +40,13 @@ public class LogProcessor extends HTTPProcessor {
 	 * @return
 	 */
 	private String stringifyHTTPResponse(Task ctx) {
-	    if (ctx.getResponse() != null) {
-	        StringBuilder sb = new StringBuilder("-<<<  Receive Response-> ");
-	        String uri = ctx.getUri().toString();
-	        String headers = stringifyHeaders(ctx.getResponse().getAllHeaders());
-	        sb.append(uri).append("  ").append(" [").append(headers).append("]");
+	    HttpResponse response = ctx.getResponse();
+	    if (response != null) {
+	        StringBuilder sb = new StringBuilder("-<<<  Receive Response-> ")
+	                .append(response.getStatusLine()).append(" ")
+	                .append(ctx.getTaskDef().getName()).append(" ")
+	                .append(ctx.getUri()).append("  ")
+	                .append(" [").append(stringifyHeaders(response.getAllHeaders())).append("]");
 	        return sb.toString();
 	    } else {
 	        return "";
@@ -61,7 +64,9 @@ public class LogProcessor extends HTTPProcessor {
 		String method = ctx.getTaskDef().getMethod().name();
 		String uri = ctx.getUri().toString();
 		String headers = stringifyHeaders(ctx.getRequest().getAllHeaders());
-		sb.append(method).append(" ").append(uri).append(" [").append(headers).append("]");
+		sb.append(method).append(" ")
+		    .append(ctx.getTaskDef().getName()).append(" ")
+		    .append(uri).append(" [").append(headers).append("]");
 		return sb.toString();
 	}
 

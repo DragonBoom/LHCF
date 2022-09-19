@@ -19,7 +19,7 @@ public interface TaskPool extends Message {
      * 
      * @author DragonBoom
      * @param task
-     * @param wakeUpTime TODO
+     * @param wakeUpTime 唤醒时间，millis
      * @return 是否回收成功
      */
     boolean deferral(Task task, Long wakeUpTime);
@@ -33,9 +33,9 @@ public interface TaskPool extends Message {
     Task[] cloneLeased();
     
     /**
-     * 移除出租的爬虫
+     * 移除爬虫
      */
-    boolean removeLeased(Task ctx);
+    boolean remove(Task ctx);
     
     /**
      * 获取已出租的爬虫（正在工作的爬虫）数
@@ -78,13 +78,4 @@ public interface TaskPool extends Message {
      * @return
      */
     boolean addFilter(TaskFilter filter);
-
-    /**
-     * 获取出租队列的详细信息
-     * 
-     * @return
-     * @author DragonBoom
-     * @since 2020.09.07
-     */
-    String getLeasedDetail();
 }

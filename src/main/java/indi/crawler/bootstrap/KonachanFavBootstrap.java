@@ -2,6 +2,7 @@ package indi.crawler.bootstrap;
 
 import java.io.File;
 import java.io.IOException;
+import java.net.URL;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -15,6 +16,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.http.HttpResponse;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.LoggerContext;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -55,6 +58,9 @@ import net.lingala.zip4j.util.Zip4jConstants;
  */
 @Slf4j
 public class KonachanFavBootstrap {
+    /*
+     * TODO: 可配化
+     */
     /** 下载存储路径 for linux */
     private static final String LINUX_DOWNLOAD_PATH = "/root/konachan";
     /** 下载存储路径 for win */
@@ -91,6 +97,13 @@ public class KonachanFavBootstrap {
     /** 线上存在的图片序号集合 */
     @Getter
     private static final Set<String> ONLINE_CODES = new HashSet<>();
+    
+    @Setter
+    private Boolean useProxy = false;
+    @Setter
+    private String proxyHost;
+    @Setter
+    private Integer proxyPort;
     
     public KonachanFavBootstrap() {
         // 执行初始化逻辑
@@ -137,7 +150,7 @@ public class KonachanFavBootstrap {
         clearEmptyDownloadedPic();
         
         // 刷新已下载记录缓存
-        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);;
+        JobUtils.refreshLocalFilenameCaches(downloadPath, DOWNLOADED_CODES, FileUtils::isImage);
         
         log.info("初始化 {} 完成", this.getClass().getSimpleName());
     }
@@ -183,7 +196,7 @@ public class KonachanFavBootstrap {
     }
     
     private String getFullFileName(String url) {
-        return parseKeyFromDownloadUrl(url) + "." + FileUtils.getSuffix(url);
+        return parseKeyFromDownloadUrl(url) + "." + FileUtils.getExtension(url);
     }
     
     /**
@@ -210,6 +223,7 @@ public class KonachanFavBootstrap {
         Path p = getFilePath(uri);
         // 移动临时文件（将删除临时文件）
         Files.move(tmpFile.toPath(), p, StandardCopyOption.REPLACE_EXISTING);
+        log.info("下载完成：{}", p);
     };
 
     private boolean errorCheck(Task ctx, Document doc, ResultHelper helper) {
@@ -334,7 +348,7 @@ public class KonachanFavBootstrap {
     public void run(String... args) throws IOException {
         String favUrl = args[0];
         // 刷新本地图片序号的缓存
-        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);
+        JobUtils.refreshLocalFilenameCaches(downloadPath, DOWNLOADED_CODES, FileUtils::isImage);
         
 //        FileUtils.clearDirectory(path);
 //        log.info("清空目录");
@@ -343,6 +357,7 @@ public class KonachanFavBootstrap {
 
         System.setProperty("jdk.http.auth.tunneling.disabledSchemes", "");// 启用HTTPS代理
         job = CrawlerJob.build()
+                .withHTTPProxy(proxyHost, proxyPort)
                 // 输出下载速度等信息
                 .withSpeedLog()
                 // 定义结束回调
@@ -361,22 +376,20 @@ public class KonachanFavBootstrap {
                         CompressionUtils.packZip(dest, zipPath.toString(), zipPwd, Zip4jConstants.DEFLATE_LEVEL_ULTRA, true);
                         log.info("打包完成！");
                     } else {
-                        log.info("未启用自动打包功能");
+                        log.debug("未启用自动打包功能");
                     }
                     
                     // 接下来closeableMonitor 将结束整个爬虫体系，包括线程池的线程，还有相关的守护线程
                 })
                 .withTmpFolder(tmpDirPath.toString())// 指定整个爬虫业务的临时文件夹，可被单个爬虫任务定义的配置所覆盖
                 .withRedisMQTaskPool(redisURI)
-//                .withContextPoolMonitor()// 有bug，会抛空指针，待升级
-                .withCloseableMonitor()// 开启关闭监视器，一旦没有待处理的爬虫任务就结束线程
-                .withHTTPProxy("127.0.0.1", 10809)
                 // 下载原图
                 .withTask("Download")
                     .withResultHandler(downloadResultHandler)
                     .withTmpDir(tmpDirPath.toString())
-                    .withResultType(TYPE.File)// FIXME: file 类型的redis存储不好实现。。。
+                    .withResultType(TYPE.TMP_FILE)// FIXME: file 类型的redis存储不好实现。。。
                     .withPriority(3)
+                    .withBlockingMillis(3000L)// 每3s执行一次下载
                     .withLogDetail()
 //                    .withRedisCache("redis://@localhost:6379/0")
                     .withKeepReceiveCookie()
@@ -413,11 +426,14 @@ public class KonachanFavBootstrap {
                     .withResultHandler(listPageResultHandler)
                     .withLogDetail()
                     .withKeepReceiveCookie()
-                    .withBlockingMillis(10000L)// 每10s处理一个收藏夹页面
+                    .withBlockingMillis(2000L)// 每2s处理一个列表页
                     .and();
                 /*
                  * 启动项目。由于启动时建立了线程池，该方法执行完成后不会导致main方法结束
                  */
+        if (useProxy) {
+            job.withHTTPProxy(proxyHost, proxyPort);
+        }
         boolean start = job.start("GetFav", favUrl);
         if (start) {
             System.out.println("---LHCF 爬虫任务启动完成---");
@@ -434,6 +450,9 @@ public class KonachanFavBootstrap {
      * @throws IOException
      */
     public void run() throws IOException {
+        /*
+         * TODO: 可配化
+         */
         this.run("https://konachan.com/post?page=1&tags=vote%3A3%3Adargonboom+order%3Avote");
     }
     
@@ -468,8 +487,24 @@ public class KonachanFavBootstrap {
      * @throws IOException
      */
     protected void deleteNoRecord() throws IOException {
-        JobUtils.delNoRecordFiles(ONLINE_CODES, DOWNLOADED_CODES, downloadPath);
+        JobUtils.delLocalFileByFilenameWhiteList(ONLINE_CODES, DOWNLOADED_CODES, downloadPath, String::compareTo, "删除线上已移除的文件：{}");
         // 更新已下载记录的缓存
-        JobUtils.refreshLocalFileCaches(downloadPath, DOWNLOADED_CODES);
+        JobUtils.refreshLocalFilenameCaches(downloadPath, DOWNLOADED_CODES, FileUtils::isImage);
+    }
+
+    /**
+     * 启动任务。必须用main函数，而不是测试用例的方式启动，因为测试用例会在主线程执行完后就结束其他线程，无法完成整个下载流程。
+     * 
+     * @throws IOException
+     */
+    public static void main(String[] args) throws Exception {
+        SystemUtils.correctRunnableJarLog4j2();
+
+        KonachanFavBootstrap bootstrap = new KonachanFavBootstrap();
+        bootstrap.setUseProxy(true);
+        bootstrap.setProxyHost("127.0.0.1");
+        bootstrap.setProxyPort(10810);
+        bootstrap.setIsCompressWhenComplete(false);
+        bootstrap.run();
     }
 }

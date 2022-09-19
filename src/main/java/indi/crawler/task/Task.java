@@ -6,8 +6,8 @@ import java.util.Comparator;
 import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -20,6 +20,7 @@ import org.apache.http.protocol.HttpContext;
 import indi.bean.BeanUtils;
 import indi.crawler.task.def.TaskDef;
 import indi.crawler.thread.CrawlerThread;
+import indi.exception.WrapperException;
 import indi.obj.Cleanupable;
 import indi.obj.Logable;
 import indi.obj.Message;
@@ -80,13 +81,12 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
     private long retryDeferrals;
     // 唤醒时间
     private long wakeUpTime;
-    // 注册时间
-    private long registration;
+    /** 向爬虫池注册的时间 */
+    private long registeredTime = -1;
+    private long leasedTime = -1;
+    /** 最大单次出租时间*/
+    private long maxLeasedTime = -1;
     private long deadLine;
-    /**
-     * 存储自定义变量，可用于在处理器间传递变量，采取懒加载
-     */
-    private Map<String, Object> data;
     // HTTP请求部分
     private transient HttpRequestBase request;
     private transient HttpEntity requestEntity;
@@ -98,7 +98,9 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
     // 由本Context产生的子任务
     private transient List<Task> childs;
     private String identityKey;// 身份编码
-    private Object arg;// 传递用参数
+    private Serializable arg;// 执行时传递用参数（TODO:最好改用Map）
+    /** TODO:有没有更好的实现单例的方式？ */
+    private final ReentrantLock statusLock = new ReentrantLock();
     
     /**
      * 获取重定向的地址集合；该地址集合按重定向顺序存放URI
@@ -129,6 +131,19 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
             throw new NullPointerException("传入对象为null，无法进行比较");
         }
         return o.getPriority() - this.priority; // TreeMap 取值时优先取小值！！
+    }
+    
+    /***
+     * 校验并修改爬虫状态，具体逻辑由Controller提供
+     * 
+     * @param status
+     * @since 2021.12.11
+     */
+    public void checkAndSetStatus(CrawlerStatus status) {
+        if (controller == null) {
+            throw new WrapperException("爬虫任务尚未完成初始化");
+        }
+        controller.changeStatus(this, status, () -> this.status = status);
     }
 
     /**
@@ -171,10 +186,10 @@ public class Task implements Cleanupable, Comparable<Task>, Message, Logable, Se
     public String getMessage() {
         return new StringBuilder("taskName:")
                 .append(getTaskDef().getName())
-                .append(", status:").append(getStatus())
-                .append(", exceptions:").append(getThrowables())
-                .append(", attemptCounts:").append(getAttempts())
-                .append(", uri.toString()")
+                .append(", status:").append(this.getStatus())
+                .append(", exceptions:").append(this.getThrowables())
+                .append(", attemptCounts:").append(this.getAttempts())
+                .append(", ").append(this.getUri())
                 .toString();
     }
 }
