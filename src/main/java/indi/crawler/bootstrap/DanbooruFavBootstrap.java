@@ -596,11 +596,12 @@ public class DanbooruFavBootstrap {
                 // 定义结束回调
                 .withCloseCallback(() -> {
                     // 删除线上没有记录（即取消收藏）的文件
-                    try {
-                        deleteNoRecord();
-                    } catch (IOException e) {
-                        throw new WrapperException(e);
-                    }
+                    // 2022.10.13 取消该功能-线上有时似乎会因为版权而移除一些图片，且会直接从收藏夹中移除这些图片，为了保留此类图片，现关闭同步删除的功能
+//                    try {
+//                        deleteNoRecord();
+//                    } catch (IOException e) {
+//                        throw new WrapperException(e);
+//                    }
                     
                     // 打包下载的所有稿件
                     if (isCompressWhenComplete) {
